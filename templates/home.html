@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BlueSheet Generation Tool</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        body {
+            background-color: #1e1e1e;
+            color: #e0e0e0;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            text-align: center;
+            padding: 2.5rem;
+            background-color: #2c2c2c;
+            border-radius: 15px;
+            box-shadow: 0px 0px 15px rgba(0, 0, 0, 0.6);
+            max-width: 600px;
+            width: 90%;
+        }
+
+        h1 {
+            font-size: 28px;
+            margin-bottom: 1rem;
+            color: #e0e0e0;
+        }
+
+        p {
+            font-size: 16px;
+            color: #b0b0b0;
+            margin-bottom: 2rem;
+            line-height: 1.5;
+        }
+
+        .chat-button {
+            background-color: #3c3c3c;
+            color: #e0e0e0;
+            padding: 12px 28px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        .chat-button:hover {
+            background-color: #4c4c4c;
+            transform: translateY(-2px);
+            box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .chat-button i {
+            font-size: 18px;
+        }
+
+        .logo {
+            margin-bottom: 2rem;
+        }
+
+        .logo i {
+            font-size: 48px;
+            color: #4a90e2;
+            margin-bottom: 1rem;
+        }
+
+        .features {
+            margin-top: 2rem;
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .feature {
+            background-color: #3c3c3c;
+            padding: 1.5rem;
+            border-radius: 10px;
+            flex: 1;
+            min-width: 200px;
+            max-width: 250px;
+            box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        .feature i {
+            font-size: 24px;
+            color: #4a90e2;
+            margin-bottom: 1rem;
+        }
+
+        .feature h3 {
+            margin: 0.5rem 0;
+            font-size: 16px;
+        }
+
+        .feature p {
+            font-size: 14px;
+            margin: 0;
+            color: #b0b0b0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">
+            <i class="fas fa-robot"></i>
+            <h1>BlueSheet Generation Tool</h1>
+        </div>
+        <p>Welcome to your intelligent BlueSheet assistant. Start generating comprehensive BlueSheets with AI-powered insights.</p>
+        <button class="chat-button" onclick="window.location.href='/chat'">
+            <i class="fas fa-comments"></i>
+            Start Generation
+        </button>
+        
+        <div class="features">
+            <div class="feature">
+                <i class="fas fa-bolt"></i>
+                <h3>Quick Generation</h3>
+                <p>Generate BlueSheets in minutes, not hours</p>
+            </div>
+            <div class="feature">
+                <i class="fas fa-brain"></i>
+                <h3>AI-Powered</h3>
+                <p>Intelligent insights and recommendations</p>
+            </div>
+            <div class="feature">
+                <i class="fas fa-file-alt"></i>
+                <h3>Professional Format</h3>
+                <p>Standardized and polished output</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

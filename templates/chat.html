@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BlueSheet Generation Tool</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js">
+        // Add this at the beginning of your script section
+        
+    </script>
+
+    <style>
+        body {
+            background-color: #1e1e1e;
+            color: #e0e0e0;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* Top bar */
+        .top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background-color: #2c2c2c;
+            padding: 10px 20px;
+            width: 60%;
+            border-radius: 10px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.5);
+            margin-bottom: 10px;
+        }
+
+        .top-bar .new-chat-btn {
+            background-color: #3c3c3c;
+            border: none;
+            color: #e0e0e0;
+            font-size: 20px;
+            padding: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .top-bar .new-chat-btn:hover {
+            background-color: #4c4c4c;
+            transform: translateY(-2px);
+            box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.3);
+        }
+        
+
+        .top-bar .title {
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .title {
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        
+        .title:hover {
+            opacity: 0.8;
+            transform: translateY(-2px);
+            box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.3);
+        }
+
+
+        /* Chat container */
+        .chat-container {
+            width: 60%;
+            max-width: 700px;
+            height: 60%;
+            padding: 20px;
+            overflow-y: auto;
+            background-color: #1e1e1e;
+            border-radius: 15px;
+            box-shadow: 0px 0px 15px rgba(0, 0, 0, 0.6);
+            position: relative;
+        }
+
+        .message {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 20px;
+        }
+
+        .message .icon {
+            margin-right: 10px;
+            font-size: 24px;
+        }
+
+        .message .text {
+            background-color: #2c2c2c;
+            padding: 10px 15px;
+            border-radius: 10px;
+            max-width: 70%;
+            word-wrap: break-word;
+        }
+
+        .user-message .text {
+            background-color: #3c3c3c;
+            align-self: flex-end;
+        }
+
+        .input-container {
+            display: flex;
+            align-items: center;
+            background-color: #2c2c2c;
+            padding: 10px 20px;
+            width: 60%;
+            border-radius: 10px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.5);
+            margin-top: 10px;
+        }
+
+        .input-container input {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            outline: none;
+            background-color: #3c3c3c;
+            color: #e0e0e0;
+            margin-right: 10px;
+        }
+
+        .input-container .send-btn, .input-container .attach-btn {
+            cursor: pointer;
+            color: #e0e0e0;
+            background-color: #3c3c3c;
+            border: none;
+            padding: 10px;
+            border-radius: 5px;
+        }
+
+        .input-container .send-btn:hover, .input-container .attach-btn:hover {
+            background-color: #4c4c4c;
+            transform: translateY(-2px);
+            box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Upload Modal */
+        #uploadModal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: #333;
+            padding: 20px;
+            border-radius: 8px;
+            color: #ddd;
+            z-index: 10;
+            box-shadow: 0px 0px 20px rgba(0, 0, 0, 0.7);
+        }
+
+        /* Modal backdrop */
+        #modalBackdrop {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            z-index: 5;
+        }
+
+        .message {
+            display: flex;
+            align-items: flex-start;
+            margin: 10px 0;
+            font-family: Arial, sans-serif; 
+        }
+
+        .message .icon {
+            font-size: 24px;
+            margin-right: 10px;
+        }
+
+        .message .text {
+            background-color: #444040;
+            padding: 10px;
+            border-radius: 8px;
+            max-width: 80%;
+            color: #fcf5f5;
+            line-height: 1.5;
+            font-size: 15px;
+        }
+
+        /* Style for headings in the response */
+        .message .text h2 {
+            font-size: 18px;
+            font-weight: bold;
+            color: #cfdce9;
+        }
+
+        /* Style for bold text */
+        .message .text b {
+            font-weight: bold;
+        }
+
+        /* Style for bullet lists */
+        .message .text ul {
+            padding-left: 20px;
+            margin: 5px 0;
+        }
+
+        /* Style for each list item */
+        .message .text li {
+            margin-bottom: 5px;
+        }
+
+        /* Style for numbers list */
+        .message .text ol {
+            padding-left: 20px;
+            margin: 5px 0;
+        }
+
+        /* Modify the loading indicator styles */
+        #loadingIndicator {
+            display: none;
+            text-align: center;
+            padding: 10px;
+            margin: 10px 0;
+            background-color: #2c2c2c;
+            border-radius: 5px;
+            font-size: 14px;
+            color: #ddd;
+        }
+
+        .loading-dots {
+            display: inline-block;
+        }
+
+        .loading-dots::after {
+            content: '';
+            animation: dots 1.5s steps(5, end) infinite;
+        }
+
+        @keyframes dots {
+            0%, 20% { content: ''; }
+            40% { content: '.'; }
+            60% { content: '..'; }
+            80% { content: '...'; }
+            100% { content: ''; }
+        }
+        /* User message */
+        .user-message .text {
+            background-color: #4a90e2; /* Light blue background for user messages */
+            color: #ffffff;
+            align-self: flex-end;
+        }
+
+        /* Bot message */
+        .message .text {
+            background-color: #2c2c2c; /* Darker gray background for bot messages */
+            color: #e0e0e0;
+        }
+
+        
+        
+
+
+    </style>
+</head>
+<body>
+
+    <!-- Modal Backdrop -->
+    <div id="modalBackdrop"></div>
+
+    <!-- Top Bar -->
+    <div class="top-bar">
+        <button title="new chat" class="new-chat-btn" onclick="startNewChat()"><i class="fas fa-plus"></i></button>
+        <div class="title" onclick="goToHome()">BlueSheet Generation Tool</div>
+    </div>
+
+    <div class="chat-container" id="chatContainer">
+        
+        <!-- Chat messages will be appended here -->
+    </div>
+    <div id="loadingIndicator">
+        Processing message<span class="loading-dots"></span>
+    </div>
+    <!-- Input Container -->
+    <div class="input-container">
+        <button title="upload file" class="attach-btn" id="attachBtn" onclick="openModal()"><i class="fas fa-paperclip"></i></button>
+        <input type="text" id="userInput" placeholder="Enter text...">
+        <button class="send-btn" id="sendBtn">Send Message</button>
+    </div>
+
+    <!-- Upload Modal -->
+    <div id="uploadModal" style="display: none;">
+        <p>Upload Document:</p>
+        <input type="file" id="uploadFileInput" accept=".doc, .docx, .txt, .xlsx, .csv, .pdf" style="color: #ddd;">
+        <div style="margin-top: 10px;">
+            <button onclick="openFileExplorer()" style="padding: 8px; cursor: pointer;">Open</button>
+            <button onclick="uploadFile()" style="padding: 8px; cursor: pointer;">Upload</button>
+            <button onclick="closeModal()" style="padding: 8px; cursor: pointer;">Close</button>
+        </div>
+    </div>
+
+    <script>
+        const BASE_URL = window.location.origin; 
+        const userInput = document.getElementById("userInput");
+        const sendButton = document.getElementById("sendBtn");
+        const uploadModal = document.getElementById("uploadModal");
+        const uploadFileInput = document.getElementById("uploadFileInput");
+
+        // Function to go to home page
+        function goToHome() {
+            window.location.href = '/';
+        }
+
+        // Function to start new chat
+        function startNewChat() {
+            window.location.href = `${BASE_URL}/chat`;
+        }
+
+        function openModal() {
+            uploadModal.style.display = "block";
+        }
+
+        function closeModal() {
+            uploadModal.style.display = "none";
+            uploadFileInput.value = ""; // Reset file input
+        }
+
+        function openFileExplorer() {
+            uploadFileInput.click(); // Opens the file explorer for choosing a file
+        }
+
+        // Modified loading indicator functions
+        function showLoadingIndicator() {
+            const loadingIndicator = document.getElementById("loadingIndicator");
+            loadingIndicator.style.display = "block";
+            // Scroll to make the indicator visible
+            loadingIndicator.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+
+        function hideLoadingIndicator() {
+            document.getElementById("loadingIndicator").style.display = "none";
+        }
+
+        async function uploadFile() {
+            const file = uploadFileInput.files[0];
+            
+            if (!file) {
+                alert("Please select a file to upload.");
+                return;
+            }
+
+            // Validate file type
+            const validExtensions = ["doc", "docx", "txt", "csv", "pdf"];
+            const fileExtension = file.name.split('.').pop().toLowerCase();
+
+            if (!validExtensions.includes(fileExtension)) {
+                alert("Invalid file type. Please upload a .doc, .docx, .txt, .xlsx, .csv, or .pdf file.");
+                return;
+            }
+
+            // Create FormData object to send file data
+            const formData = new FormData();
+            formData.append("file", file);
+
+            try {
+                const response = await fetch(`${BASE_URL}/upload`, {
+                    method: "POST",
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    alert(`${file.name} successfully uploaded.`);
+                } else {
+                    alert(`Error uploading file: ${data.error}`);
+                }
+
+            } catch (error) {
+                console.error("Error uploading file:", error);
+                alert("An error occurred while uploading the file. Please try again.");
+            } finally {
+                closeModal();
+            }
+        }
+
+        async function fetchMessages() {
+            try {
+                const response = await fetch(`${BASE_URL}/message`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ action: "fetch" })
+                });
+                const data = await response.json();
+
+                if (data.messages) {
+                    data.messages.forEach(message => appendModelResponse(message));
+                }
+
+                if (data.input_prompt) {
+                    appendModelResponse(message);
+                }
+            } catch (error) {
+                console.error("Error fetching messages:", error);
+            }
+        }
+
+        async function sendMessage(message) {
+            userInput.disabled = true;
+            showLoadingIndicator();
+
+            try {
+                const response = await fetch(`${BASE_URL}/message`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ action: "input_response", response: message })
+                });
+
+                const data = await response.json();
+
+                if (data.status === "Input received from client") {
+                    appendUserMessage(message);
+                    userInput.value = "";
+                    fetchMessages();
+                }
+            } catch (error) {
+                console.error("Error sending message:", error);
+            } finally {
+                userInput.disabled = false;
+                hideLoadingIndicator();
+            }
+        }
+
+
+
+        // Append user message to chat container
+        function appendUserMessage(message) {
+            $('#chatContainer').append(`
+                <div class="message user-message">
+                    <div class="text">${message}</div>
+                </div>
+            `);
+            $('#chatContainer').scrollTop($('#chatContainer')[0].scrollHeight);
+        }
+
+
+        // Append model response to chat container
+        function appendModelResponse(message) {
+            $('#chatContainer').append(`
+                <div class="message">
+                    <div class="icon">🤖</div>
+                    <div class="text">${message}</div>
+                </div>
+            `);
+            $('#chatContainer').scrollTop($('#chatContainer')[0].scrollHeight);
+        }
+
+
+        // Button click event to send user message
+        sendButton.addEventListener("click", () => {
+            const message = userInput.value.trim();
+            if (message) {
+                sendMessage(message);
+            }
+        });
+        // Add Enter key event listener for user input
+        userInput.addEventListener("keyup", (event) => {
+            if (event.key === "Enter") { // Check if Enter key is pressed
+                const message = userInput.value.trim();
+                if (message) {
+                    sendMessage(message);
+                }
+            }
+        });
+
+        fetchMessages();
+
+        setInterval(fetchMessages, 2000);
+
+        // const downloadedFiles = new Set();  // Track files already downloaded
+
+        // Check for new files periodically
+        async function checkForNewFiles() {
+            try {
+                const response = await fetch(`${BASE_URL}/check-new-files`);
+                const data = await response.json();
+
+                if (data.files) {
+                    data.files.forEach(filename => {
+                        downloadFile(filename);
+                    });
+                }
+            } catch (error) {
+                console.error("Error checking for new files:", error);
+            }
+        }
+
+        // Download the file and trigger deletion on the backend
+        async function downloadFile(filename) {
+            try {
+                const response = await fetch(`${BASE_URL}/download/${filename}`, {
+                    method: 'GET',
+                });
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(url);
+
+                    console.log(`${filename} downloaded.`);
+
+                    // Trigger delete request
+                    await fetch(`${BASE_URL}/remove/${filename}`, {
+                        method: 'DELETE',
+                    });
+                    
+                    console.log(`${filename} deleted from server.`);
+                } else {
+                    console.log(`Error downloading file ${filename}:`, await response.json());
+                }
+            } catch (error) {
+                console.error("Error downloading file:", error);
+            }
+        }
+
+
+        // Check for new files every 5 seconds
+        setInterval(checkForNewFiles, 5000);
+
+    </script>
+</body>
+</html>
