@@ -1,0 +1,10 @@
+google-cloud-aiplatform >= 1.31.0
+Flask
+pandas
+requests
+vertexai
+openpyxl
+python-docx
+python-dotenv
+Spire.Doc 
+
