@@ -41,8 +41,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font
 from docx import Document as Docxdocument
 from docx.shared import Pt
-from spire.doc import *
-from spire.doc.common import *
+
 
 from vertexai.preview.generative_models import (
     GenerationResponse,
@@ -93,25 +92,28 @@ chat_thread = None
 def home():
     return render_template('home.html')
 
+
 @app.route('/chat', methods=['GET'])
 def chat():
-    # Initialize chat when this route is accessed
-    initialize_chat()
+    # Reinitialize chat each time this route is accessed
+    initialize_chat(reset=True)
     return render_template('chat.html')
 
-def initialize_chat():
-    """Initialize chat components and start background processes"""
+def initialize_chat(reset=False):
+    """Initialize or reset chat components."""
     global chat_thread
-    if not hasattr(g, 'chat_initialized'):
-        if chat_thread is None:
-            chat_thread = threading.Thread(target=start_chat_session)
-            chat_thread.start()
+    if reset or not hasattr(g, 'chat_initialized'):
+        # Stop previous thread if running (optional)
+        if chat_thread and chat_thread.is_alive():
+            chat_thread = None  # Terminate the current thread if needed
+        chat_thread = threading.Thread(target=start_chat_session, daemon=True)
+        chat_thread.start()
         g.chat_initialized = True
 
 def start_chat_session():
     """Main chat session logic"""
     
-    time.sleep(1)  # Allow time for server start
+    time.sleep(1)  
     
     
     model = GenerativeModel(
@@ -126,9 +128,10 @@ def start_chat_session():
     handle_step_four(session)
     handle_step_five(session)
     handle_step_six(session)
-    the_doc = os.listdir(app.config['UPLOAD_FOLDER'])[0]
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], the_doc)
+    
     try:
+        the_doc = os.listdir(app.config['UPLOAD_FOLDER'])[0]
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], the_doc)
         if os.path.isfile(file_path):
             os.remove(file_path)
     except Exception as e:
@@ -176,7 +179,6 @@ def download(filename):
     try:
         downloads = os.path.join(current_app.root_path, app.config['TEMP_DOWNLOADS_FOLDER'])
         
-        # Log the full path for debugging
         file_path = os.path.join(downloads, filename)
         print(f"Attempting to download: {file_path}")
 
@@ -184,7 +186,6 @@ def download(filename):
         if os.path.isfile(file_path):
             return send_from_directory(downloads, filename, as_attachment=True)
         else:
-            # If the file does not exist, return a 404 error
             abort(404, description="File not found")
     except Exception as e:
         print(f"Error downloading file: {e}")
@@ -227,7 +228,7 @@ def message_handler():
         return jsonify({"error": "No response provided"}), 400
 
     elif action == "fetch":
-        # Send queued messages and input requests to client
+        
         messages = []
         while not print_queue.empty():
             messages.append(print_queue.get())
@@ -240,7 +241,6 @@ def message_handler():
 
     return jsonify({"error": "Invalid action"}), 400
 
-# Function to send a message to the client
 
 def custom_print(message):
     requests.post(f"{BASE_URL}/message", json={"action": "print", "message": message})
@@ -328,36 +328,27 @@ def clean_html(response_text):
 
 def save_to_excel(json_data, folder=None):
     """Save JSON data to Excel with bold headers using openpyxl."""
-    # Clean up JSON data if it contains markdown formatting
     json_text = re.sub(r'```json|```', '', json_data).strip()
     json_data = json.loads(json_text)
-
-    # Create a new workbook and get the document name
     wb = Workbook()
     document_name = json_data.get("document_name", "Bluesheet Draft.xlsx")
     
-    # Remove the default sheet created by openpyxl
     default_sheet = wb.active
     wb.remove(default_sheet)
-    
-    # Process each worksheet in the JSON data
     for sheet_name, rows in json_data.items():
         if sheet_name == "document_name":
-            continue  # Skip the document name key
+            continue  
         
         ws = wb.create_sheet(title=sheet_name)
 
-        # Check if rows contain data
         if rows:
-            # Use the first row's keys as headers
+
             headers = rows[0].keys()
             ws.append(list(headers))
             
-            # Apply bold font to headers
             for cell in ws[1]:  # First row (headers)
                 cell.font = Font(bold=True)
             
-            # Append each row's values to the worksheet
             for row_data in rows:
                 ws.append(list(row_data.values()))
         else:
@@ -390,7 +381,7 @@ def json_to_docx(json_string, folder):
     # Initialize a Word document
     document = Docxdocument()
     
-    # Iterate through JSON data (skip the first dictionary as it only contains the filename)
+
     for item in data[1:]:
         content_type = item.get("type")
         text = item.get("text", "")
@@ -413,53 +404,10 @@ def json_to_docx(json_string, folder):
                 
     # Build the full path for saving the file
     save_path = os.path.join(app.config['TEMP_DOWNLOADS_FOLDER'], file_name)
-    
     # Save the document with the specified filename in the uploads folder
     document.save(save_path)
     print(f"Document saved as {save_path}")
     
-
-
-def word_to_pdf(file_path, folder):
-    # Create a Document object
-    document = Document()
-    # Load a Word DOCX file
-    document.LoadFromFile(file_path)
-
-    # Create a ToPdfParameterList object
-    parameters = ToPdfParameterList()
-
-    # Embed all used fonts in Word into PDF
-    parameters.IsEmbeddedAllFonts = True
-
-    #Save the file to a PDF file
-    if file_path.endswith('.docx'):
-        document.SaveToFile(f"{folder}/{file_path.replace('.docx', '.pdf')}", parameters)
-    elif file_path.endswith('.doc'):
-        document.SaveToFile(f"{folder}/{file_path.replace('.doc', '.pdf')}", parameters)
-    document.Close()
-
-        
-def csv_to_txt(csv_file_path, folder):
-    # Derive TXT file path based on CSV file path
-    txt_file_path = f"{folder}/{os.path.splitext(csv_file_path)[0]}.txt"
-    
-    with open(csv_file_path, 'r') as csv_file:
-        lines = csv_file.readlines()
-        
-        # Write to the TXT file
-        with open(txt_file_path, 'w') as txt_file:
-            for line in lines:
-                # # Strip trailing commas, replace with a single space if the line is otherwise empty
-                # stripped_line = line.rstrip(',\n')
-                
-                # # Only write non-empty lines
-                # if stripped_line:
-                #     # Replace remaining commas with tabs to format as columns
-                txt_file.write(
-                    line
-                )
-    return txt_file_path
 
 
 # Document loading function
@@ -490,20 +438,22 @@ def handle_step_one(session):
     
     while True:
         first_message = custom_input()
-        rfp_doc = os.listdir(app.config['UPLOAD_FOLDER'])[0]
-        rfp_doc = os.path.join(UPLOAD_FOLDER, rfp_doc)
+        rfp_doc = None
+        
         if stage == 0: 
             custom_print("Hello! I'm here to help build your bluesheet. What is the name of this project?")
             project_name = custom_input()
-            custom_print("Please upload the rfp document before proceeding")
+            custom_print("Please upload the RFP document before proceeding")
             stage +=1
-        if rfp_doc == None:
-            # custom_print("Please upload the rfp document...")
-            time.sleep(2)
-            print("Waiting for RFP document upload...")
-            app.logger.info("Waiting for RFP document upload...")
-            raise Exception("RFP document not uploaded")
-            continue
+        while rfp_doc == None:
+            try:
+                rfp_doc = os.listdir(app.config['UPLOAD_FOLDER'])[0]
+                rfp_doc = os.path.join(UPLOAD_FOLDER, rfp_doc)
+            except Exception as e:
+                print(f"No file exists in {UPLOAD_FOLDER}")
+                
+
+       
         
         rfp_document = load_document(rfp_doc)
         
@@ -578,7 +528,6 @@ def handle_step_one(session):
         else: 
             custom_print("No modifications were requested. Proceeding to the next step.")
             break
-
 
 def handle_step_two(session):
     custom_print("Would you like me to proceed with equipment identification for MISCO analysis?")
