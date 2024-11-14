@@ -38,14 +38,15 @@ SYSTEM_INSTRUCTION = [
 prompt_template_one = """
 <INSTRUCTIONS>
 You are tasked with generating JSON data that represents the structure of a `.docx` document titled "<Project Name> – Basic RFP Bid Analysis". Replace <Project Name> with the name of the project (ensure it follows file naming conventions). This document will summarize essential project information as provided in the uploaded RFP. Each section should be formatted with clear headings and proper spacing for readability.
-If user specifies the project name in <PROJECT_NAME> extract and use that name in the title. Otherwise, use the project name extracted from the RFP.
+If user specifies the project name in <PROJECT_NAME>, extract and use that name in the title. Otherwise, use the project name extracted from the RFP.
 
 <FORMATTING GUIDELINES>
 1. Title: Set the document title as "[Project Name] - RFP Analysis" using the project name extracted from the RFP.
 2. Use the Blue_Sheet_Bid_Document_Template.pdf as a reference for formatting.
 3. Use a header for each main section, with bold font for section names and sub-section names (e.g., "Bid Information:", "Funding Sources:").
 4. Format content with appropriate spacing and alignment to ensure clarity.
-5. Populate each field directly with extracted data from the RFP. If data is not available, label it as "Not specified".
+5. Populate each field directly with extracted data from the RFP. If data is not available, label it as "Not specified". Make sure document is thoroughly scanned before using the "Not specified" phrase.
+6. If data is not found, find a description that can suit data to be extracted that was not found.
 
 <ACTION>
 Parse and extract the following sections from the RFP document and format them as JSON according to this schema:
@@ -129,6 +130,7 @@ Base Bid Requirement: [Detail any base bid requirements, including forms and sub
 Substitutes Allowed: [Indicate whether material or product substitutions are allowed and under what conditions]
 Or-Equals Accepted: [Do a detiled analysis and indicate and describe whether "or-equal" products or brands are accepted and describe the approval process]
 
+<NOTE> For each extracted data, include a description.
 <PROJECT_NAME>{project_name}</PROJECT_NAME>
 """
 
@@ -138,10 +140,9 @@ You are tasked with performing an initial equipment identification and MISCO ana
 
 <FORMATTING GUIDELINES>
 1. Begin with a statement confirming analysis completion, e.g., "Based on the provided RFP and MISCO’s product categories and brands, the following sections and equipment are relevant to MISCO:"
-2. List and explain each identified section and corresponding equipment description from the RFP, ensuring it aligns with MISCO’s represented brands and technologies.
+2. List and explain in details each identified section and corresponding equipment description from the RFP, ensuring it aligns with MISCO’s represented brands and technologies.
 3. Use bullet points or numbered lists for each item, with clear labels like "Spec Section:" and "Equipment Description:".
-4. If no relevant sections are found, state "No relevant sections or equipment identified for MISCO."
-5. Output should be in html format:
+4. Output should be in html format:
 [
    "The html output should be in format for easy rendering in chat window. Use html elements instead of '*' and '#'",
    "use b tag for bold text",
@@ -152,8 +153,39 @@ You are tasked with performing an initial equipment identification and MISCO ana
 ]
 
 <ACTION>
-1. Review and cross-reference the RFP with 'MISCO Water Products' to identify sections and equipment relevant to MISCO.
-2. Extract list and explain the identified spec sections and equipment descriptions.
+To analyze the RFP and match it with MISCO-represented brands and product categories, here’s a step-by-step approach:
+
+1. **Gather Information**:
+   - Obtain the RFP document and the MISCO water products text.
+   - Make sure you have access to the predefined list of MISCO-represented brands, product categories, and specific technologies.
+
+2. **Review and Extract Key Terms**:
+   - Scan through the RFP to identify relevant specification sections and keywords related to MISCO’s product categories.
+   - Extract terms related to water products, technologies, equipment, and brands mentioned in the RFP.
+
+3. **Cross-Reference with MISCO's Product Information**:
+   - Go through the MISCO water products text to locate brands, product categories, and technologies.
+   - List out each product category, brand, and technology in a structured format for easy reference.
+
+4. **Identify Relevant RFP Sections**:
+   - Match each section of the RFP with corresponding MISCO product categories and brands.
+   - Use keywords or phrases from both the RFP and MISCO information to make relevant connections.
+
+5. **List Relevant Equipment and Descriptions**:
+   - For each RFP section, display the specific MISCO-represented brands and equipment that align with the requirements.
+   - Provide descriptions of each equipment piece as listed in the MISCO water products text, including features or specifications that are particularly relevant.
+
+6. **Create a Summary Table or List**:
+   - Organize the information following the description in <FORMATTING_GUIDELINES> and <OUTPUT>
+   - Include detailed information to ensure clear alignment between the RFP requirements and MISCO products.
+
+7. **Review for Completeness**:
+   - Verify that all sections of the RFP have been matched with applicable MISCO products.
+   - Ensure that all relevant equipment descriptions are comprehensive and accurate.
+
+8. **Present the Final Analysis**:
+   - Present the analysis in a format that is easy to read, with clear headings for each RFP section.
+   - Provide any additional recommendations or notes regarding potential alignments between the RFP requirements and MISCO offerings.
 
 <OUTPUT>
 Example output format:
@@ -240,7 +272,19 @@ Your JSON output should have the following structure:
    - Extract data based on relevance for each company, and if data is missing, label as "Not specified".
    - Example row for JSON entry:
       { "Spec Section": "33 40 00", "Equipment/Item Description": "Valve", "Named Manufacturers": "Brand A, Brand B", "Represented Company": "MISCO", "Contact Information": "Sandy Clarke, sclarke@miscowater.com", "Product Specifications": "Max pressure: 100 PSI" }
+<ACTION>
+Generate a draft bluesheet in Excel format (should come in JSON format as specified in FORMATTING_GUIDELINES and JSON_SCHEMA) using the format in the attached "Blue Sheet Template 2024.txt" with the following details. (You would need three sheets, one each for MISCO, Shape and Southwest Valve):
+1.	Spec Section: Identified from the RFP, relevant to MISCO, or Southwest Valve.
+2.	Equipment / Item Description: Description of the equipment pulled from the RFP or matching it with the brands represented.
+3.	Named Manufacturers for Relevant Equipment / Item Section: Review the equipment section of the RFP in the spec sections and carefully read the subsection about manufacturers. Typically, you will see multiple manufacturers, separate by comma and in some cases the sentence ends with or equal. 
+4. Represented Company: Review all the manufactures in section 3 against the represented manufacturers shared earlier. Indicate whether there is a named MISCO represented brand, Shape-represented brand, or Southwest Valve represented brand, if none of these companies represent the mentioned manufacturer, write None. If there is no named, mentioned manufacturer, leave it empty
+5. Contact Information: Include the relevant contact for the identified equipment, based on the list provided:
+o	MISCO Northern California: Sandy Clarke, sclarke@miscowater.com
+o	Shape Northern California: Nick Chavez, nchavez@shapecal.com
+o	Southwest Valves Northern California: Dave Burrell
 
+6.	Product Specifications, Criteria, and Requirements: Extract specific technical details, performance standards, materials, or other requirements outlined in the RFP for each equipment category.
+<NOTE> Ensure the Excel document (JSON from you) includes detailed specifications, criteria, and requirements for each equipment item. Populate the contact details for MISCO, Shape, and Southwest Valves from the provided contact list.
 <OUTPUT>
 Generate only the JSON formatted as per the schema above. Save it with the specified structure to represent each company's sheet data clearly.
 """
