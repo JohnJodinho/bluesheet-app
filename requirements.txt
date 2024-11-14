@@ -6,5 +6,4 @@ vertexai
 openpyxl
 python-docx
 python-dotenv
-Spire.Doc 
 
