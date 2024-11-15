@@ -332,7 +332,7 @@ def generate(
                 },
                 stream=stream,
             )
-            error_state = {"modelError": False, "message": message}
+            error_state = {"modelError": False, "message": ""}
             break  # Exit loop if no error occurs
         except Exception as e:
             app.logger.error(f"An error occurred, retrying in 2 seconds: {e}")
