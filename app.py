@@ -36,6 +36,7 @@ from queue import Queue
 import threading
 import requests
 import vertexai
+import logging
 
 from openpyxl import Workbook
 from openpyxl.styles import Font
@@ -68,6 +69,19 @@ app = Flask(__name__)
 
 vertexai.init(project=PROJECT_ID, location=LOCATION)
 
+# Set up logging
+logging.basicConfig(
+    filename="app.log",  # Log file in the root directory
+    level=logging.DEBUG,  # Set the logging level (e.g., DEBUG, INFO, WARNING, ERROR, CRITICAL)
+    format="%(asctime)s - %(levelname)s - %(message)s"  # Log message format
+)
+
+# Add a StreamHandler to also log to console
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+console_handler.setFormatter(formatter)
+app.logger.addHandler(console_handler)
 
 # Configuration settings 
 UPLOAD_FOLDER = 'uploads'
@@ -87,9 +101,23 @@ print_queue = Queue()
 input_request_queue = Queue()
 input_response_queue = Queue()
 chat_thread = None
+stop_chat = False
+# Global variable to store error status and message
+error_state = {"modelError": False, "message": ""}
 
 @app.route('/', methods=['GET'])
 def home():
+    global stop_chat, error_state
+    stop_chat = False
+    error_state = {"modelError": False, "message": ""}
+    try:
+        the_doc = os.listdir(app.config['UPLOAD_FOLDER'])[0]
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], the_doc)
+        if os.path.isfile(file_path):
+            os.remove(file_path)
+    except Exception as e:
+        app.logger.error(f"Error removing file: {e}")
+    app.logger.info("Home route accessed")
     return render_template('home.html')
 
 
@@ -97,15 +125,28 @@ def home():
 def chat():
     # Reinitialize chat each time this route is accessed
     initialize_chat(reset=True)
+    try:
+        the_doc = os.listdir(app.config['UPLOAD_FOLDER'])[0]
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], the_doc)
+        if os.path.isfile(file_path):
+            os.remove(file_path)
+    except Exception as e:
+        app.logger.error(f"Error removing file from uploads: {e}")
+    app.logger.info("Chat route accessed")
     return render_template('chat.html')
 
 def initialize_chat(reset=False):
     """Initialize or reset chat components."""
-    global chat_thread
+    global chat_thread, stop_chat, error_state
     if reset or not hasattr(g, 'chat_initialized'):
-        # Stop previous thread if running (optional)
+        # Signal any existing chat thread to stop
+        stop_chat = True
         if chat_thread and chat_thread.is_alive():
-            chat_thread = None  # Terminate the current thread if needed
+            chat_thread.join()  # Wait for the thread to end
+            time.sleep(2)
+        # Reset the control flag for the new session
+        stop_chat = False
+        error_state = {"modelError": False, "message": ""}
         chat_thread = threading.Thread(target=start_chat_session, daemon=True)
         chat_thread.start()
         g.chat_initialized = True
@@ -135,7 +176,7 @@ def start_chat_session():
         if os.path.isfile(file_path):
             os.remove(file_path)
     except Exception as e:
-        print(f"Error removing file: {e}")
+        app.logger.error(f"Error removing file: {e}")
         
         
 
@@ -171,7 +212,7 @@ def check_new_files():
         files = os.listdir(app.config['TEMP_DOWNLOADS_FOLDER'])
         return jsonify(files=files), 200
     except Exception as e:
-        print(f"Error checking new files: {e}")
+        app.logger.error(f"Error checking new files: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/download/<path:filename>", methods=["GET"])
@@ -180,7 +221,7 @@ def download(filename):
         downloads = os.path.join(current_app.root_path, app.config['TEMP_DOWNLOADS_FOLDER'])
         
         file_path = os.path.join(downloads, filename)
-        print(f"Attempting to download: {file_path}")
+        app.logger.info(f"Attempting to download: {file_path}")
 
         # Check if the file exists
         if os.path.isfile(file_path):
@@ -188,7 +229,7 @@ def download(filename):
         else:
             abort(404, description="File not found")
     except Exception as e:
-        print(f"Error downloading file: {e}")
+        app.logger.error(f"Error downloading file: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/remove/<filename>', methods=['DELETE'])
@@ -242,6 +283,11 @@ def message_handler():
     return jsonify({"error": "Invalid action"}), 400
 
 
+@app.route('/get_error_state', methods=['GET'])
+def get_error_state():
+    # Send the current error state to the front end
+    return jsonify(error_state)
+
 def custom_print(message):
     requests.post(f"{BASE_URL}/message", json={"action": "print", "message": message})
 
@@ -265,22 +311,11 @@ def generate(
 ) -> GenerationResponse | Iterable[GenerationResponse]:
     """
     Function to generate response using Gemini 1.5 Pro
-
-    Args:
-        prompt:
-            List of prompt parts
-        max_output_tokens:
-            Max Output tokens
-        temperature:
-            Temperature for the model
-        top_p
-            Top-p for the model
-        stream:
-            Stream results?
-
-    Returns:
-        Model response """
-    while True:
+    """
+    global stop_chat  # Refer to the global stop_chat flag
+    global error_state  # Refer to the global error state
+    stage = 0  # Initialize the stage counter
+    while not stop_chat:
         try:
             responses = session.send_message(
                 prompt,
@@ -297,13 +332,17 @@ def generate(
                 },
                 stream=stream,
             )
-            break
+            error_state = {"modelError": False, "message": message}
+            break  # Exit loop if no error occurs
         except Exception as e:
-            print(f"An error occurred retrying in 2 seconds: {e}")
-            time.sleep(2)
+            app.logger.error(f"An error occurred, retrying in 2 seconds: {e}")
+            message = f"Vertex ai: {str(e)}"
+            if stage == 0:
+                error_state = {"modelError": True, "message": message}
+                stage += 1
+            time.sleep(3)
 
-    return responses
-
+    return responses if not stop_chat else None  # Return None if stopped
 
 def is_valid_json(response_text):
     """
@@ -352,12 +391,12 @@ def save_to_excel(json_data, folder=None):
             for row_data in rows:
                 ws.append(list(row_data.values()))
         else:
-            print(f"Warning: No data found for sheet '{sheet_name}'.")
+            app.logger.warning(f"Warning: No data found for sheet '{sheet_name}'.")
 
     # Ensure the TEMP_DOWNLOADS_FOLDER is set in the config
     folder = app.config.get('TEMP_DOWNLOADS_FOLDER')
     if not folder:
-        raise ValueError("TEMP_DOWNLOADS_FOLDER is not configured in app.config.")
+        app.logger.critical("TEMP_DOWNLOADS_FOLDER is not configured in app.config.")
     
     # Ensure the folder exists
     os.makedirs(folder, exist_ok=True)
@@ -365,7 +404,7 @@ def save_to_excel(json_data, folder=None):
     
     # Save the workbook
     wb.save(save_path)
-    print(f"Document saved as {save_path}")
+    app.logger.info(f"Document saved as {save_path}")
     
 
     
@@ -406,7 +445,7 @@ def json_to_docx(json_string, folder):
     save_path = os.path.join(app.config['TEMP_DOWNLOADS_FOLDER'], file_name)
     # Save the document with the specified filename in the uploads folder
     document.save(save_path)
-    print(f"Document saved as {save_path}")
+    app.logger.info(f"Document saved as {save_path}")
     
 
 
@@ -427,7 +466,7 @@ def load_document(file_path, folder=None):
         file_path = f"{folder}/{file_path.replace('.docx', '.pdf')}"
         mime_type = "application/pdf"
     else:
-        print("Unsupported file type. Please provide a PDF, or TXT document.") 
+        app.logger.warning("Unsupported file type. Please provide a PDF, or TXT document.") 
     # Load the file
     with open(file_path, "rb") as fp:
         document = Part.from_data(data=fp.read(), mime_type=mime_type)
@@ -436,7 +475,7 @@ def load_document(file_path, folder=None):
 def handle_step_one(session):
     stage = 0
     
-    while True:
+    while not stop_chat:
         first_message = custom_input()
         rfp_doc = None
         
@@ -445,12 +484,12 @@ def handle_step_one(session):
             project_name = custom_input()
             custom_print("Please upload the RFP document before proceeding")
             stage +=1
-        while rfp_doc == None:
+        while rfp_doc == None and not stop_chat:
             try:
                 rfp_doc = os.listdir(app.config['UPLOAD_FOLDER'])[0]
                 rfp_doc = os.path.join(UPLOAD_FOLDER, rfp_doc)
             except Exception as e:
-                print(f"No file exists in {UPLOAD_FOLDER}")
+                app.logger.error(f"No file exists in {UPLOAD_FOLDER}")
                 
 
        
@@ -476,9 +515,9 @@ def handle_step_one(session):
                 custom_print("Document successfuly analyzed")
                 break
             except Exception as e: 
-                print(f"An error occurred: {e}")
+                app.logger.error(f"An error occurred: {e}")
         
-        print("Error occurred while generating the JSON structure. Trying again...")
+        app.logger.error("Error occurred while generating the JSON structure. Trying again...")
         custom_print("An error occurred")
         custom_print("Regenerating Bluesheet Basic RFP Bid Analysis Document...")
         responses = generate(prompt=[
@@ -495,11 +534,11 @@ def handle_step_one(session):
                 break
                 
             except Exception as e: 
-                print(f"An error occurred: {e}")
+                app.logger.error(f"An error occurred: {e}")
                 custom_print("An error ocurred. Try again later")
                 return False
     # Handle user feedback and modifications
-    while True:
+    while not stop_chat:
         custom_print("Would you like to make any modifications or corrections to the document? If yes, please specify the modifications.")
         user_response = custom_input().strip()
         # Request JSON content for the document
@@ -523,7 +562,7 @@ def handle_step_one(session):
                 custom_print("Document updated successfully.")
                 continue
             except Exception as e:
-                print(f"An error occurred: {e}")
+                app.logger.error(f"An error occurred: {e}")
                 continue
         else: 
             custom_print("No modifications were requested. Proceeding to the next step.")
@@ -539,12 +578,12 @@ def handle_step_two(session):
     try:
         responses = generate(prompt=prompt, session=session)
     except Exception as e:
-        raise Exception(f"Error generating MISCO document: {e}")
+        app.logger.error(f"Error generating MISCO document: {e}")
     response_text = responses.text
     custom_print(clean_html(response_text))
 
     # Ask for anything else
-    while True:
+    while not stop_chat:
         custom_print("Anything else you'd like me to do? or shall we proceed to the next step?")
         user_response = custom_input().strip().lower()
         response_text = generate(prompt=[
@@ -586,7 +625,7 @@ and Southwest Valve? I will review the RFP based on their products and categorie
     response_text = responses.text
     custom_print(clean_html(response_text))
         # Ask for anything else
-    while True:
+    while not stop_chat:
         custom_print("Anything else you'd like me to do? or shall we proceed to the next step?")
         user_response = custom_input().strip().lower()
         response_text = generate(prompt=[
@@ -630,10 +669,10 @@ def handle_step_four(session):
             custom_print("Generated excel draft!")
             status = True
         except Exception as e:
-            print(f"Error saving bluesheet: {e}")
+            app.logger.error(f"Error saving bluesheet: {e}")
 
     # Loop for handling user feedback and modifications
-    while True:
+    while not stop_chat:
         if status:
             # Success case - ask for user review
             responses = generate(prompt=[
@@ -661,7 +700,7 @@ def handle_step_four(session):
                 status = True
                 continue
             except Exception as e:
-                print(f"Error saving bluesheet: {e}")
+                app.logger.error(f"Error saving bluesheet: {e}")
                 continue
         else:
             custom_print(clean_html(response_text))
@@ -683,7 +722,7 @@ def handle_step_four(session):
                     custom_print("Generated excel draft.")
                     status = True
                 except Exception as e:
-                    print(f"Error saving bluesheet: {e}")
+                    app.logger.error(f"Error saving bluesheet: {e}")
                 continue
             else:
                 custom_print(clean_html(response_text))
@@ -700,7 +739,7 @@ def handle_step_five(session):
         custom_print(clean_html(email_draft.text))  # Display the initial draft
 
         # Iteratively ask for modifications until the user is satisfied
-        while True:
+        while not stop_chat:
             custom_print("Would you like any modifications to the email draft? (yes/no): ")
             user_response = custom_input().strip().lower()
             if user_response == "no":
@@ -722,7 +761,7 @@ def handle_step_five(session):
             save_to_excel(bluesheet_json_response, TEMP_DOWNLOADS_FOLDER)
             custom_print("The final bluesheet Excel file has been successfully generated.")
         except Exception as e:
-            print(f"Error generating the final bluesheet: {e}")
+            app.logger.error(f"Error generating the final bluesheet: {e}")
     
     else:
         # Handle invalid input
@@ -732,7 +771,7 @@ def handle_step_five(session):
 
 
 def handle_step_six(session):
-    while True:
+    while not stop_chat:
         # Initial prompt to ask if the user would like to do anything else
         # Send the prompt to the model to capture the user's intent (yes/no response)
         follow_up_response = generate(prompt=[follow_up_prompt], session=session)
