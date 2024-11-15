@@ -86,8 +86,8 @@ The sections are as follows:
 6. Bid Conditions:
    - Listing Form requirement
    - Base Bid requirement
-   - Substitutes Allowed (yes/no) with related comments
-   - Or-Equals Accepted (yes/no) with related comments
+   - Substitutes Allowed (yes/no) with related comments (This section should be in the document)
+   - Or-Equals Accepted (yes/no) with related comments (This section should be in the document)
 
 <OUTPUT>
 Make sure only valid JSON is generated with no errors.
