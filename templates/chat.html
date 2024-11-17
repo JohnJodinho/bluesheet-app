@@ -338,7 +338,7 @@
      <!-- Loading Indicator (Dynamically Created) -->
      <div id="loading-indicator">
          <div class="spinner"></div>
-         <p>Loading...</p>
+         <p>Processing...</p>
      </div>
 
     <!-- Upload Modal -->
@@ -504,11 +504,13 @@
                 </div>
             `);
             $('#chatContainer').scrollTop($('#chatContainer')[0].scrollHeight);
+            showLoadingIndicator();
         }
 
 
         // Append model response to chat container
         function appendModelResponse(message) {
+            hideLoadingIndicator();
             $('#chatContainer').append(`
                 <div class="message">
                     <div class="icon">🤖</div>
@@ -523,9 +525,9 @@
         sendButton.addEventListener("click", async () => {
             const message = userInput.value.trim();
             if (message) {
-                showLoadingIndicator();
+                
                 await sendMessage(message);
-                hideLoadingIndicator();
+                
             }
         });
 
@@ -534,9 +536,9 @@
             if (event.key === "Enter") { // Check if Enter key is pressed
                 const message = userInput.value.trim();
                 if (message) {
-                    showLoadingIndicator();
+                    
                     await sendMessage(message);
-                    hideLoadingIndicator();
+                    
                 }
             }
         });
