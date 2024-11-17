@@ -9,6 +9,8 @@ from flask import (
     current_app,
     g
 )
+from werkzeug.utils import secure_filename
+from PyPDF2 import PdfReader, PdfWriter
 
 from prompt_templates import (
     SYSTEM_INSTRUCTION,
@@ -85,8 +87,13 @@ app.logger.addHandler(console_handler)
 
 # Configuration settings 
 UPLOAD_FOLDER = 'uploads'
+ALLOWED_EXTENSIONS = {'pdf'}
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+TO_SPLIT_FOLDER = "to_split"
+os.makedirs(TO_SPLIT_FOLDER, exist_ok=True)
+app.config["TO_SPLIT_FOLDER"] = TO_SPLIT_FOLDER
 
 TEMP_DOWNLOADS_FOLDER = 'downloads'
 os.makedirs(TEMP_DOWNLOADS_FOLDER, exist_ok=True)
@@ -104,6 +111,7 @@ chat_thread = None
 stop_chat = False
 # Global variable to store error status and message
 error_state = {"modelError": False, "message": ""}
+batches_processed = 0
 
 @app.route('/', methods=['GET'])
 def home():
@@ -111,10 +119,15 @@ def home():
     stop_chat = False
     error_state = {"modelError": False, "message": ""}
     try:
-        the_doc = os.listdir(app.config['UPLOAD_FOLDER'])[0]
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], the_doc)
-        if os.path.isfile(file_path):
-            os.remove(file_path)
+        the_docs = os.listdir(app.config['UPLOAD_FOLDER'])
+        uploaded = os.listdir(app.config["TO_SPLIT_FOLDER"])
+        for the_doc in the_docs:
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], the_doc)
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+        uploaded_file = os.path.join(app.config["TO_SPLIT_FOLDER"], uploaded[0])
+        if os.path.isfile(uploaded_file):
+            os.remove(uploaded_file)
     except Exception as e:
         app.logger.error(f"Error removing file: {e}")
     app.logger.info("Home route accessed")
@@ -126,12 +139,17 @@ def chat():
     # Reinitialize chat each time this route is accessed
     initialize_chat(reset=True)
     try:
-        the_doc = os.listdir(app.config['UPLOAD_FOLDER'])[0]
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], the_doc)
-        if os.path.isfile(file_path):
-            os.remove(file_path)
+        the_docs = os.listdir(app.config['UPLOAD_FOLDER'])
+        uploaded = os.listdir(app.config["TO_SPLIT_FOLDER"])
+        for the_doc in the_docs:
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], the_doc)
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+        uploaded_file = os.path.join(app.config["TO_SPLIT_FOLDER"], uploaded[0])
+        if os.path.isfile(uploaded_file):
+            os.remove(uploaded_file)
     except Exception as e:
-        app.logger.error(f"Error removing file from uploads: {e}")
+        app.logger.error(f"Error removing file: {e}")
     app.logger.info("Chat route accessed")
     return render_template('chat.html')
 
@@ -143,7 +161,7 @@ def initialize_chat(reset=False):
         stop_chat = True
         if chat_thread and chat_thread.is_alive():
             chat_thread.join()  # Wait for the thread to end
-            time.sleep(2)
+            # time.sleep(2)
         # Reset the control flag for the new session
         stop_chat = False
         error_state = {"modelError": False, "message": ""}
@@ -171,40 +189,52 @@ def start_chat_session():
     handle_step_six(session)
     
     try:
-        the_doc = os.listdir(app.config['UPLOAD_FOLDER'])[0]
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], the_doc)
-        if os.path.isfile(file_path):
-            os.remove(file_path)
+        the_docs = os.listdir(app.config['UPLOAD_FOLDER'])
+        uploaded = os.listdir(app.config["TO_SPLIT_FOLDER"])
+        for the_doc in the_docs:
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], the_doc)
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+        uploaded_file = os.path.join(app.config["TO_SPLIT_FOLDER"], uploaded[0])
+        if os.path.isfile(uploaded_file):
+            os.remove(uploaded_file)
     except Exception as e:
         app.logger.error(f"Error removing file: {e}")
         
-        
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS  
 
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    
+    global batches_processed
     if 'file' not in request.files:
         return jsonify({"error": "No file part in the request"}), 400
     
     file = request.files['file']
     if file.filename == '':
         return jsonify({"error": "No file selected for uploading"}), 400
-    
-    # Save the file to the server
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-    
-    file.save(file_path)    
-    
-    print(file_path)
-    # For example, return a part of the document as JSON
-    response_data = {
-        "filename": file.filename,
-        "content_preview": "Success"  
-    }
-    
-    return jsonify(response_data), 200
-    
+
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)  # Secure the filename
+        save_path = os.path.join(app.config['TO_SPLIT_FOLDER'], filename)
+
+        # Save the file to the upload folder
+        file.save(save_path)
+
+        # Call the utility function with the saved file path
+        try:
+            batches_processed = split_and_save_pdf(file_name=save_path)
+            response_data = {
+                "filename": filename,
+                "content_preview": "PDF split successfully"
+            }
+            return jsonify(response_data), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    return jsonify({"error": "Invalid file type"}), 400
+
 # Endpoint to list new files in the downloads folder
 @app.route('/check-new-files', methods=['GET'])
 def check_new_files():
@@ -304,8 +334,8 @@ def custom_input():
 def generate(
     prompt: list,
     max_output_tokens: int = 2048,
-    temperature: int = 2,
-    top_p: float = 0.4,
+    temperature: int = 1,
+    top_p: float = 0.6,
     stream: bool = False,
     session = None,
 ) -> GenerationResponse | Iterable[GenerationResponse]:
@@ -317,6 +347,7 @@ def generate(
     stage = 0  # Initialize the stage counter
     while not stop_chat:
         try:
+            
             responses = session.send_message(
                 prompt,
                 generation_config={
@@ -333,6 +364,7 @@ def generate(
                 stream=stream,
             )
             error_state = {"modelError": False, "message": ""}
+            
             break  # Exit loop if no error occurs
         except Exception as e:
             app.logger.error(f"An error occurred, retrying in 2 seconds: {e}")
@@ -447,10 +479,32 @@ def json_to_docx(json_string, folder):
     document.save(save_path)
     app.logger.info(f"Document saved as {save_path}")
     
+def split_and_save_pdf(file_name):
+    input_pdf = PdfReader(file_name)
+    batch_size = 50
+    num_batches = len(input_pdf.pages) // batch_size + 1
+
+    # Extract batches of pages from the PDF
+    for b in range(num_batches):
+        writer = PdfWriter()
+
+        # Get the start and end page numbers for this batch
+        start_page = b * batch_size
+        end_page = min((b + 1) * batch_size, len(input_pdf.pages))
+
+        # Add pages in this batch to the writer
+        for i in range(start_page, end_page):
+            writer.add_page(input_pdf.pages[i])
+
+        # Save the batch to a separate PDF file
+        batch_filename = f'{os.path.splitext(os.path.basename(file_name))[0]}-batch{b+1}.pdf'
+        file_path = os.path.join(UPLOAD_FOLDER, batch_filename)
+        with open(file_path, 'wb') as output_file:
+            writer.write(output_file)
+    return num_batches
 
 
-# Document loading function
-# Load the document (Word, PDF, or Excel)
+
 def load_document(file_path, folder=None):
     file_extension = file_path.split('.')[-1].lower()
     mime_type = None
@@ -477,36 +531,59 @@ def handle_step_one(session):
     
     while not stop_chat:
         first_message = custom_input()
-        rfp_doc = None
+        rfp_docs = None
         
         if stage == 0: 
             custom_print("Hello! I'm here to help build your bluesheet. What is the name of this project?")
             project_name = custom_input()
             custom_print("Please upload the RFP document before proceeding")
             stage +=1
-        while rfp_doc == None and not stop_chat:
+        while rfp_docs == None and not stop_chat:
+            # custom_print("here")
             try:
-                rfp_doc = os.listdir(app.config['UPLOAD_FOLDER'])[0]
-                rfp_doc = os.path.join(UPLOAD_FOLDER, rfp_doc)
+                
+                rfp_docs = os.listdir(app.config['UPLOAD_FOLDER'])
+                if batches_processed != 0 and len(rfp_docs) == batches_processed:
+                    
+                    print(len(rfp_docs))
+                    # print(rfp_docs[0])
+                    rfp_docs = [os.path.join(UPLOAD_FOLDER, rfp_doc) for rfp_doc in rfp_docs]
+                else:
+                    rfp_docs = None
+                # print(f"uploads folder got; {len(rfp_docs)}")
+                # custom_print(f"now here: {len(rfp_docs)}")
+                if len(rfp_docs) < 1:
+                    rfp_docs = None
             except Exception as e:
-                app.logger.error(f"No file exists in {UPLOAD_FOLDER}")
+                app.logger.error(f"No file exists in {UPLOAD_FOLDER}. Error: {e}")
+                rfp_docs = None
                 
 
-       
-        
-        rfp_document = load_document(rfp_doc)
+        rfp_part_files = {}
+        for rfp_document_name in rfp_docs:
+            rfp_document = load_document(rfp_document_name)
+            rfp_part_files[rfp_document_name] = rfp_document
         
         template_file_path = os.path.join(SYSTEM_DOCS, "Blue_Sheet_Bid_Document_Template.pdf")
         
         bluesheet_bid_doc_template = load_document(template_file_path)
-        
+        # print(f"Now has: {list(rfp_part_files.values())}")
+        rfp_parts = sorted_dict = dict(
+            sorted(rfp_part_files.items(), key=lambda item: int(item[0].split("-batch")[1].split(".pdf")[0]))
+        )
+
+        rfp_parts_prompt = list(rfp_parts.values())
+        rfp_parts_prompt.pop(len(rfp_parts_prompt)-1)
+        # print(rfp_parts_prompt)
+        rfp_parts_prompt.append(f"Here is the rfp document splitted into {len(rfp_parts_prompt)} chunks (.pdf files) for easy processing")
         custom_print("Processing the RFP document...")
         prompt_template_one.format(project_name=project_name)
         # Request JSON content for the document
-        response_text = generate(prompt=[rfp_document, bluesheet_bid_doc_template, prompt_template_one], session=session).text
-        
+        response = generate(prompt=rfp_parts_prompt, session=session)
+        # custom_print(response.text)
         custom_print("Generating Bluesheet Basic RFP Bid Analysis Document...")
-     
+        response_text = generate(prompt=[prompt_template_one], session=session).text
+        # custom_print(response_text)
         if is_valid_json(response_text):
             try:
                 # Save or pass the JSON data to the json_to_docx function
@@ -782,8 +859,9 @@ def handle_step_six(session):
             response_handling_prompt.format(user_response=user_response)
 
             final_follow_up = generate(prompt=[response_handling_prompt], session=session)
-            custom_print(clean_html(final_follow_up.text))  # Display model's final follow-up or conclusion message
+            # custom_print(clean_html(final_follow_up.text))  # Display model's final follow-up or conclusion message
             if final_follow_up.text.startswith("END"):
+                custom_print("Thanks for your time")
                 return 
         else:
             custom_print("Can't generate that document now")
