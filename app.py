@@ -28,7 +28,7 @@ from prompt_templates import (
 from typing import Iterable
 import io
 import time
-import pandas as pd
+
 import json
 import os  # Handle file paths and directory operations
 from os import path  # Check if files or directories exist, get file paths
