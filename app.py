@@ -29,7 +29,7 @@ from typing import Iterable
 import io
 import time
 
-import json
+
 import os  # Handle file paths and directory operations
 from os import path  # Check if files or directories exist, get file paths
 import re  # Use regular expressions for text processing
@@ -39,6 +39,7 @@ import threading
 import requests
 import vertexai
 import logging
+import json
 
 from openpyxl import Workbook
 from openpyxl.styles import Font
