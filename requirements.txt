@@ -5,5 +5,5 @@ vertexai
 openpyxl
 python-docx
 python-dotenv
-pyPDF
+# pyPDF
 
