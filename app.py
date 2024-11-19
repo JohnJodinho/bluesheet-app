@@ -10,7 +10,7 @@ from flask import (
     g
 )
 from werkzeug.utils import secure_filename
-#from PyPDF2 import PdfReader, PdfWriter
+from PyPDF2 import PdfReader, PdfWriter
 
 from prompt_templates import (
     SYSTEM_INSTRUCTION,
