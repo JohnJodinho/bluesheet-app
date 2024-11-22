@@ -9,18 +9,14 @@ from flask import (
     current_app,
     g
 )
+
 from werkzeug.utils import secure_filename
 from PyPDF2 import PdfReader, PdfWriter
 
 from prompt_templates import (
     SYSTEM_INSTRUCTION,
-    prompt_template_four, 
-    prompt_template_one, 
-    prompt_template_three, 
-    prompt_template_two, 
-    email_draft_prompt, 
-    email_modification_prompt, 
-    bluesheet_finalization_prompt, 
+    prompt_template_misco, 
+    prompt_template_shape_southwest, 
     follow_up_prompt, 
     response_handling_prompt
 )
@@ -29,7 +25,7 @@ from typing import Iterable
 import io
 import time
 
-
+import json
 import os  # Handle file paths and directory operations
 from os import path  # Check if files or directories exist, get file paths
 import re  # Use regular expressions for text processing
@@ -37,9 +33,7 @@ from texts import SHAPE, SOUTH_WEST, MISCO
 from queue import Queue
 import threading
 import requests
-import vertexai
 import logging
-import json
 
 from openpyxl import Workbook
 from openpyxl.styles import Font
@@ -47,31 +41,27 @@ from docx import Document as Docxdocument
 from docx.shared import Pt
 
 
-from vertexai.preview.generative_models import (
-    GenerationResponse,
+import google.generativeai as genai
+from google.generativeai import (
     GenerativeModel,
-    HarmBlockThreshold,
-    HarmCategory,
-    Part, 
+    delete_file,
+    configure,
+    GenerationConfig, 
     ChatSession
 )
 from dotenv import load_dotenv
 
 
 load_dotenv()
-# Access the variables
-PROJECT_ID = os.getenv("PROJECT_ID")
-LOCATION = os.getenv("LOCATION")
 MODEL_NAME = os.getenv("MODEL_NAME")
 BASE_URL = os.getenv("CLOUD_RUN_SERVICE_URL", "http://127.0.0.1:5000")
-BLOCK_LEVEL = HarmBlockThreshold.BLOCK_ONLY_HIGH
+API_KEY = os.getenv("GENAI_API_KEY")
 
 
 
 app = Flask(__name__)
 
-vertexai.init(project=PROJECT_ID, location=LOCATION)
-
+configure(api_key=API_KEY)
 # Set up logging
 logging.basicConfig(
     filename="app.log",  # Log file in the root directory
@@ -87,8 +77,9 @@ console_handler.setFormatter(formatter)
 app.logger.addHandler(console_handler)
 
 # Configuration settings 
-UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'pdf'}
+
+UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
@@ -99,10 +90,6 @@ app.config["TO_SPLIT_FOLDER"] = TO_SPLIT_FOLDER
 TEMP_DOWNLOADS_FOLDER = 'downloads'
 os.makedirs(TEMP_DOWNLOADS_FOLDER, exist_ok=True)
 app.config['TEMP_DOWNLOADS_FOLDER'] = TEMP_DOWNLOADS_FOLDER
-
-SYSTEM_DOCS = "app_documents"
-os.makedirs(SYSTEM_DOCS, exist_ok=True)
-app.config["SYSTEM_DOCS"] = SYSTEM_DOCS
 
 # Global variables
 print_queue = Queue()
@@ -170,6 +157,14 @@ def initialize_chat(reset=False):
         chat_thread.start()
         g.chat_initialized = True
 
+def check_and_delete_all_files():
+    try:
+        all_files = genai.list_files()
+        for f in all_files:
+            f.delete()
+    except Exception as e:
+        app.logger.warning(f"Could not delete files: {e}")
+
 def start_chat_session():
     """Main chat session logic"""
     
@@ -182,12 +177,11 @@ def start_chat_session():
     )
 
     session = model.start_chat()
+    check_and_delete_all_files()
     handle_step_one(session)
     handle_step_two(session)
-    handle_step_three(session)
-    handle_step_four(session)
-    handle_step_five(session)
-    handle_step_six(session)
+    handle_last_step(session)
+    check_and_delete_all_files()
     
     try:
         the_docs = os.listdir(app.config['UPLOAD_FOLDER'])
@@ -201,7 +195,8 @@ def start_chat_session():
             os.remove(uploaded_file)
     except Exception as e:
         app.logger.error(f"Error removing file: {e}")
-        
+
+
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS  
 
@@ -331,15 +326,22 @@ def custom_input():
         if not input_response_queue.empty():
             return input_response_queue.get()
         time.sleep(1)  # Poll every second
+def check_and_delete_all_files():
+    try:
+        all_files = genai.list_files()
+        for f in all_files:
+            f.delete()
+    except Exception as e:
+        app.logger.warning(f"Could not delete files: {e}")
 
 def generate(
     prompt: list,
     max_output_tokens: int = 2048,
-    temperature: int = 1,
-    top_p: float = 0.6,
+    temperature: int = 2,
+    top_p: float = 0.4,
     stream: bool = False,
-    session = None,
-) -> GenerationResponse | Iterable[GenerationResponse]:
+    session = None
+):
     """
     Function to generate response using Gemini 1.5 Pro
     """
@@ -356,12 +358,7 @@ def generate(
                     "temperature": temperature,
                     "top_p": top_p,
                 },
-                safety_settings={
-                    HarmCategory.HARM_CATEGORY_HATE_SPEECH: BLOCK_LEVEL,
-                    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: BLOCK_LEVEL,
-                    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: BLOCK_LEVEL,
-                    HarmCategory.HARM_CATEGORY_HARASSMENT: BLOCK_LEVEL,
-                },
+                
                 stream=stream,
             )
             error_state = {"modelError": False, "message": ""}
@@ -394,6 +391,7 @@ def is_valid_json(response_text):
     except ValueError:
         # If parsing fails, it's not valid JSON
         return False
+
 def clean_html(response_text):
     html = re.sub(r'```html|```', '', response_text).strip()
     return html
@@ -442,44 +440,6 @@ def save_to_excel(json_data, folder=None):
 
     
 
-def json_to_docx(json_string, folder):
-    # Parse JSON string into a Python dictionary
-    json_text = re.sub(r'```json|```', '', json_string).strip()
-    data = json.loads(json_text)
-    
-    # Retrieve filename from the first dictionary
-    file_name = data[0].get("fileName", "output.docx")
-    
-    # Initialize a Word document
-    document = Docxdocument()
-    
-
-    for item in data[1:]:
-        content_type = item.get("type")
-        text = item.get("text", "")
-        font_size = item.get("fontSize", 12)
-        level = item.get("level", 1)  # For headings, this defines heading level
-
-        if content_type == "heading":
-            # Add a heading with the specified level
-            heading = document.add_heading(text, level=level)
-            # Adjust font size of heading if specified
-            for run in heading.runs:
-                run.font.size = Pt(font_size)
-        
-        elif content_type == "paragraph":
-            # Add a paragraph with the specified font size
-            paragraph = document.add_paragraph(text)
-            # Set the font size for each run in the paragraph
-            for run in paragraph.runs:
-                run.font.size = Pt(font_size)
-                
-    # Build the full path for saving the file
-    save_path = os.path.join(app.config['TEMP_DOWNLOADS_FOLDER'], file_name)
-    # Save the document with the specified filename in the uploads folder
-    document.save(save_path)
-    app.logger.info(f"Document saved as {save_path}")
-    
 def split_and_save_pdf(file_name):
     input_pdf = PdfReader(file_name)
     batch_size = 50
@@ -508,107 +468,184 @@ def split_and_save_pdf(file_name):
 
 def load_document(file_path, folder=None):
     file_extension = file_path.split('.')[-1].lower()
-    mime_type = None
+    _mime_type = None
     if file_extension == "pdf":
-        mime_type = "application/pdf"
+        _mime_type = "application/pdf"
     elif file_extension == "csv":
         file_path = csv_to_txt(file_path, folder)
-        mime_type = "text/plain"
+        _mime_type = "text/plain"
     elif file_extension == "txt":
-        mime_type = "text/plain"
+        _mime_type = "text/plain"
     elif file_extension in ["doc", "docx"]:
         word_to_pdf(file_path, folder)
         file_path = f"{folder}/{file_path.replace('.docx', '.pdf')}"
-        mime_type = "application/pdf"
+        _mime_type = "application/pdf"
     else:
         app.logger.warning("Unsupported file type. Please provide a PDF, or TXT document.") 
     # Load the file
-    with open(file_path, "rb") as fp:
-        document = Part.from_data(data=fp.read(), mime_type=mime_type)
+    with open(file_path, "rb") as f:
+        document = genai.upload_file(f, mime_type=_mime_type)
     return document
 
 def handle_step_one(session):
     stage = 0
-    
     while not stop_chat:
-        first_message = custom_input()
         rfp_docs = None
-        
         if stage == 0: 
-            custom_print("Hello! I'm here to help build your bluesheet. What is the name of this project?")
-            project_name = custom_input()
-            custom_print("Please upload the RFP document before proceeding")
+            custom_print("Please upload the RFP document to generate the Bluesheet.")
             stage +=1
         while rfp_docs == None and not stop_chat:
-            # custom_print("here")
             try:
-                
                 rfp_docs = os.listdir(app.config['UPLOAD_FOLDER'])
-                if batches_processed != 0 and len(rfp_docs) == batches_processed:
-                    
-                    print(len(rfp_docs))
-                    # print(rfp_docs[0])
+                if batches_processed != 0 and len(rfp_docs) == batches_processed:   
+                    # print(len(rfp_docs))
                     rfp_docs = [os.path.join(UPLOAD_FOLDER, rfp_doc) for rfp_doc in rfp_docs]
                 else:
                     rfp_docs = None
-                # print(f"uploads folder got; {len(rfp_docs)}")
-                # custom_print(f"now here: {len(rfp_docs)}")
+               
                 if len(rfp_docs) < 1:
                     rfp_docs = None
             except Exception as e:
-                app.logger.error(f"No file exists in {UPLOAD_FOLDER}. Error: {e}")
+                # app.logger.error(f"Error in handle_step_one: No file exists in {UPLOAD_FOLDER}. Error: {e}")
                 rfp_docs = None
                 
 
         rfp_part_files = {}
+        custom_print("Getting the RFP document ready...")
         for rfp_document_name in rfp_docs:
             rfp_document = load_document(rfp_document_name)
             rfp_part_files[rfp_document_name] = rfp_document
-        
-        template_file_path = os.path.join(SYSTEM_DOCS, "Blue_Sheet_Bid_Document_Template.pdf")
-        
-        bluesheet_bid_doc_template = load_document(template_file_path)
-        # print(f"Now has: {list(rfp_part_files.values())}")
+    
         rfp_parts = sorted_dict = dict(
             sorted(rfp_part_files.items(), key=lambda item: int(item[0].split("-batch")[1].split(".pdf")[0]))
         )
 
         rfp_parts_prompt = list(rfp_parts.values())
         rfp_parts_prompt.pop(len(rfp_parts_prompt)-1)
-        # print(rfp_parts_prompt)
+      
         rfp_parts_prompt.append(f"Here is the rfp document splitted into {len(rfp_parts_prompt)} chunks (.pdf files) for easy processing")
-        custom_print("Processing the RFP document...")
-        prompt_template_one.format(project_name=project_name)
+        custom_print("Analyzing the RFP document...")
         # Request JSON content for the document
+
         response = generate(prompt=rfp_parts_prompt, session=session)
+        if response == None:
+            return
         # custom_print(response.text)
-        custom_print("Generating Bluesheet Basic RFP Bid Analysis Document...")
-        response_text = generate(prompt=[prompt_template_one], session=session).text
+        custom_print("Generating Bluesheet for MISCO...")
+        try:
+            response_text = generate(prompt=[prompt_template_misco, MISCO], session=session).text
+        except Exception as e:
+            app.logger.error(f"Error ocurred in handle_step_one: {e}")
+            return
         # custom_print(response_text)
         if is_valid_json(response_text):
             try:
                 # Save or pass the JSON data to the json_to_docx function
                 print(response_text)
-                json_to_docx(response_text, TEMP_DOWNLOADS_FOLDER)
-                custom_print("Document successfuly analyzed")
+                save_to_excel(response_text, TEMP_DOWNLOADS_FOLDER)
+                custom_print("Bluesheet document successfuly generated!")
                 break
             except Exception as e: 
-                app.logger.error(f"An error occurred: {e}")
+                app.logger.error(f"An error occurred in handle_step_one: {e}")
         
         app.logger.error("Error occurred while generating the JSON structure. Trying again...")
         custom_print("An error occurred")
-        custom_print("Regenerating Bluesheet Basic RFP Bid Analysis Document...")
+        custom_print("Regenerating Bluesheet Document...")
+        try:
+            responses = generate(prompt=[
+            "The generation failed. Please try again, ensuring no errors in JSON structure."
+            ], session=session)
+            response_text = responses.text
+        except Exception as e:
+            app.logger.error(f"Error ocurred in handle_step_one: {e}")
+        
+        if is_valid_json(response_text):
+            try:
+                save_to_excel(response_text, TEMP_DOWNLOADS_FOLDER)
+                custom_print("Bluesheet document successfuly generated!")
+                break
+
+            except Exception as e: 
+                app.logger.error(f"An error occurred handle_step_one: {e}")
+                custom_print("An error ocurred. Try again later")
+                return 
+    # Handle user feedback and modifications
+    while not stop_chat:
+        custom_print("Would you like to make any modifications or corrections to the document? If yes, please specify the modifications.")
+        user_response = custom_input()
+        # Request JSON content for the document
+        try:
+            response_text = generate(prompt=[
+                f"""
+                <NOTE> This stage is iterative depending on the user's feedback in <USER_RESPONSE> </NOTE>
+                <INSTRUCTIONS>
+                Apply user feedback to the previously sent JSON and send new with changes. That is if user requests modifications.
+                <ACTION>
+                If the user requests modifications:
+                    * apply the user feedback to the JSON document and return the JSON that'll be formatted into a .xlsx document.
+                If the user does not request modifications:
+                    * Reply with a message indicating that no modifications were requested and proceeding to the next step. (Message should not be in JSON format)
+                    * Do not mention anything about JSON in your response.
+                <USER_RESPONSE>{user_response}</USER_RESPONSE>
+                """
+            ],  session=session).text
+            if is_valid_json(response_text):
+                try:
+                    save_to_excel(response_text, TEMP_DOWNLOADS_FOLDER)
+                    custom_print("Document updated successfully.")
+                    continue
+                except Exception as e:
+                    app.logger.error(f"An error occurred: {e}")
+                    continue
+            else: 
+                custom_print(clean_html(response_text))
+                return
+        except Exception as e:
+            app.logger.info(f"An error occured in handle_step_one: {e}")
+            return
+
+def handle_step_two(session):
+    custom_print("""
+Would you like to identify synergy opportunities in this RFP for companies:  
+Shape (representing related companies in Northern California)  
+and Southwest Valve? I will review the RFP based on their products and categories and generate the bluesheet. 
+""")
+    while not stop_chat:
+        user_response = custom_input()
+        prompt_template_shape_southwest.format(user_response=user_response)
+        custom_print("Generating Bluesheet for Shape and Southwest...")
+        try:
+            response_text = generate(prompt=[prompt_template_shape_southwest, SHAPE, SOUTH_WEST], session=session).text
+        except Exception as e:
+            app.logger.error(f"Error occurred in handle_step_two: {e}")
+            return
+        if is_valid_json(response_text):
+            try:
+                # Save or pass the JSON data to the json_to_docx function
+                print(response_text)
+                save_to_excel(response_text, TEMP_DOWNLOADS_FOLDER)
+                custom_print("Bluesheet document successfuly generated.")
+                break
+            except Exception as e: 
+                app.logger.error(f"An error occurred: {e}")
+        else:
+            custom_print(clean_html(response_text))
+            return
+        
+        app.logger.error("Error occurred while generating the JSON structure. Trying again...")
+        custom_print("An error occurred")
+        custom_print("Regenerating Bluesheet Document...")
         responses = generate(prompt=[
-            """
-            The document generation failed. Please try again, ensuring no errors in JSON structure.
-            """
+            """The document generation failed. Please try again, ensuring no errors in JSON structure."""
         ], session=session)
+        if responses == None:
+            return
         response_text = responses.text
         if is_valid_json(response_text):
             try:
                 
-                json_to_docx(response_text, TEMP_DOWNLOADS_FOLDER)
-                custom_print("Document successfuly analyzed")
+                save_to_excel(response_text, TEMP_DOWNLOADS_FOLDER)
+                custom_print("Document successfuly generated")
                 break
                 
             except Exception as e: 
@@ -620,253 +657,59 @@ def handle_step_one(session):
         custom_print("Would you like to make any modifications or corrections to the document? If yes, please specify the modifications.")
         user_response = custom_input().strip()
         # Request JSON content for the document
-        response_text = generate(prompt=[
-            f"""
-            <NOTE> This stage is iterative depending on the user's feedback. </NOTE>
-            <INSTRUCTIONS>
-            Apply user feedback to the previously sent JSON document and send new document with changes. That is if user requests modifications.
-            <ACTION>
-            If the user requests modifications:
-                * apply the user feedback to the JSON document and return the JSON that'll be formatted into a DOCX document.
-            If the user does not request modifications:
-                * Reply with a message indicating that no modifications were requested and proceeding to the next step. (Not in JSON format)
-                * Do not mention anything about JSON in your response.
-            <USER_RESPONSE>{user_response}</USER_RESPONSE>
-            """
-        ],  session=session).text
-        if is_valid_json(response_text):
-            try:
-                json_to_docx(response_text, TEMP_DOWNLOADS_FOLDER)
-                custom_print("Document updated successfully.")
-                continue
-            except Exception as e:
-                app.logger.error(f"An error occurred: {e}")
-                continue
-        else: 
-            custom_print("No modifications were requested. Proceeding to the next step.")
-            break
-
-def handle_step_two(session):
-    custom_print("Would you like me to proceed with equipment identification for MISCO analysis?")
-    response = custom_input()
-    misco_document = MISCO
-    prompt_template_two.format(response=response)
-
-    prompt = [misco_document, prompt_template_two]
-    try:
-        responses = generate(prompt=prompt, session=session)
-    except Exception as e:
-        app.logger.error(f"Error generating MISCO document: {e}")
-    response_text = responses.text
-    custom_print(clean_html(response_text))
-
-    # Ask for anything else
-    while not stop_chat:
-        custom_print("Anything else you'd like me to do? or shall we proceed to the next step?")
-        user_response = custom_input().strip().lower()
-        response_text = generate(prompt=[
-            f"""
-            <NOTE> This stage is iterative depending on the user's feedback. </NOTE>
-            <INSTRUCTIONS>
-            Perform the next action based on the user's response. 
-            If user wants to proceed to the next step, reply with a message (in plain text and not with html format) indicating that you will proceed to next step. Start with: "END STAGE..." 
-            <ACTION>
-            Respond to the user's feedback and proceed to the next step if the user does not request any further actions or questions.
-            If user asks to generate a document, reply with: "Can't generate that document now."
-            <USER_RESPONSE>{user_response}</USER_RESPONSE>
-            """
-        ], session=session).text
-        if response_text.startswith("END"):
-            custom_print("Proceeding to the next step.")
-            break
-        else:
-            custom_print(clean_html(response_text))
-            continue
-
-
-
-
-
-def handle_step_three(session):
-    custom_print("""
-Would you like to identify synergy opportunities in this RFP for UFT’s platform companies,
-Shape (representing related companies in Northern California),
-and Southwest Valve? I will review the RFP based on their products and categories.
-""")
-    response = custom_input()
-    shape_document = SHAPE
-    southwest_valve_document = SOUTH_WEST
-
-    prompt_template_three.format(response=response)
-    prompt = [shape_document, southwest_valve_document, prompt_template_three]
-    responses = generate(prompt=prompt, session=session)
-    response_text = responses.text
-    custom_print(clean_html(response_text))
-        # Ask for anything else
-    while not stop_chat:
-        custom_print("Anything else you'd like me to do? or shall we proceed to the next step?")
-        user_response = custom_input().strip().lower()
-        response_text = generate(prompt=[
-            f"""
-            <NOTE> This stage is iterative depending on the user's feedback. </NOTE>
-            <INSTRUCTIONS>
-            Perform the next action based on the user's response. 
-            If user wants to proceed to the next step, reply with a message (in plain text and not with html format) indicating that you will proceed to next step. Start with: "END STAGE..." 
-            <ACTION>
-            Respond to the user's feedback and proceed to the next step if the user does not request any further actions or questions.
-            If user asks to generate a document, reply with: "Can't generate that document now."
-            <USER_RESPONSE>{user_response}</USER_RESPONSE>
-            """
-        ], session=session).text
-        if response_text.startswith("END"):
-            custom_print("Proceeding to the next step.")
-            break
-        else:
-            custom_print(clean_html(response_text))
-            continue
-
-
-
-def handle_step_four(session):
-    template_file_path = os.path.join(SYSTEM_DOCS, "Blue Sheet Template 2024.txt")
-    bluesheet_template = load_document(template_file_path)
-    
-    custom_print("I will go ahead to generate a draft of the bluesheet in Excel format.")
-   
-    prompt1 = [bluesheet_template, prompt_template_four]
-    responses = generate(prompt=prompt1, session=session)
-    response_text = responses.text
-
-    # Check if response is JSON and attempt to save it
-    status = False
-    if is_valid_json(response_text):
-        
         try:
-            custom_print("Generating draft...")
-            save_to_excel(response_text, TEMP_DOWNLOADS_FOLDER)
-            custom_print("Generated excel draft!")
-            status = True
-        except Exception as e:
-            app.logger.error(f"Error saving bluesheet: {e}")
-
-    # Loop for handling user feedback and modifications
-    while not stop_chat:
-        if status:
-            # Success case - ask for user review
-            responses = generate(prompt=[
-                """
-                <STATUS>"Success"</STATUS>
-                <ACTION>Ask user to review draft to see if there are modifications
-                <MESSAGE FOR USER> "I have generateted bluesheet Excel with detailed product specifications, criteria, and requirements for each category, as well as the contact information for MISCO, Shape, and Southwest Valves opportunities. Please review this draft and let me know if there are any changes or additions."
-                """
-            ], session=session)
-        else:
-            # Failure case - regenerate JSON without errors
-            responses = generate(prompt=[
-                """
-                <STATUS>"Fail"</STATUS>
-                <ACTION>Regenerate JSON output, following the correct schema for the Excel document generation.
-                """
-            ], session=session)
-
-        response_text = responses.text
-        if is_valid_json(response_text):
-            
-            try:
-                save_to_excel(response_text, TEMP_DOWNLOADS_FOLDER)
-                custom_print("Generated excel draft.")
-                status = True
-                continue
-            except Exception as e:
-                app.logger.error(f"Error saving bluesheet: {e}")
-                continue
-        else:
-            custom_print(clean_html(response_text))
-            custom_print("Please provide your modifications: ")
-            response = custom_input()
-            responses = generate(prompt=[
+            response_text = generate(prompt=[
                 f"""
+                <NOTE> This stage is iterative depending on the user's feedback in <USER_RESPONSE> </NOTE>
                 <INSTRUCTIONS>
-                Apply user feedback to the JSON draft, updating or adding rows to the specified worksheet (MISCO, Shape, or Southwest Valve) in the schema.
-                <USER_RESPONSE>{response}</USER_RESPONSE>
+                Apply user feedback to the previously sent JSON and send new with changes. That is if user requests modifications.
+                <ACTION>
+                If the user requests modifications:
+                    * apply the user feedback to the JSON document and return the JSON that'll be formatted into a .xlsx document.
+                If the user does not request modifications:
+                    * Reply with a message indicating that no modifications were requested and proceeding to the next step. (Message should not be in JSON format)
+                    * Do not mention anything about JSON in your response.
+                <USER_RESPONSE>{user_response}</USER_RESPONSE>
                 """
-            ], session=session)
-            response_text = responses.text
-            status = False
+            ],  session=session).text
             if is_valid_json(response_text):
-                
                 try:
                     save_to_excel(response_text, TEMP_DOWNLOADS_FOLDER)
-                    custom_print("Generated excel draft.")
-                    status = True
+                    custom_print("Document updated successfully.")
+                    continue
                 except Exception as e:
-                    app.logger.error(f"Error saving bluesheet: {e}")
-                continue
-            else:
+                    app.logger.error(f"An error occurred: {e}")
+                    continue
+            else: 
                 custom_print(clean_html(response_text))
-                break
-
-def handle_step_five(session):
-    # Ask the user if they want to draft an email
-    custom_print("Would you like to draft an email to UFT portfolio company leads? (yes/no): ")
-    user_response = custom_input().strip().lower()
-
-    if user_response == "yes":
-        # Generate initial email draft
-        email_draft = generate(prompt=[email_draft_prompt], session=session)
-        custom_print(clean_html(email_draft.text))  # Display the initial draft
-
-        # Iteratively ask for modifications until the user is satisfied
-        while not stop_chat:
-            custom_print("Would you like any modifications to the email draft? (yes/no): ")
-            user_response = custom_input().strip().lower()
-            if user_response == "no":
-                break  # Exit loop if no modifications needed
-
-            # Gather modification details and generate revised draft
-            custom_print("Please specify the modifications you'd like to make: ")
-            modification_details = custom_input()
-            modified_email_draft = generate(prompt=[email_modification_prompt.format(modification_details=modification_details)], session=session)
-            custom_print(clean_html(modified_email_draft.text))  # Display the revised draft
-
-        # Finalized draft message
-        custom_print("The email draft is finalized and ready for sending.")
-        
-    elif user_response == "no":
-        # If no email draft needed, generate the final bluesheet JSON and save as Excel
-        bluesheet_json_response = generate(prompt=[bluesheet_finalization_prompt], session=session).text
-        try:
-            save_to_excel(bluesheet_json_response, TEMP_DOWNLOADS_FOLDER)
-            custom_print("The final bluesheet Excel file has been successfully generated.")
+                return
         except Exception as e:
-            app.logger.error(f"Error generating the final bluesheet: {e}")
-    
-    else:
-        # Handle invalid input
-        custom_print("Invalid response. Please respond with 'yes' to draft an email or 'no' to proceed with bluesheet download.")
+            return
 
-
-
-
-def handle_step_six(session):
+def handle_last_step(session):
     while not stop_chat:
         # Initial prompt to ask if the user would like to do anything else
         # Send the prompt to the model to capture the user's intent (yes/no response)
-        follow_up_response = generate(prompt=[follow_up_prompt], session=session)
-        response_text = follow_up_response.text
-        if not is_valid_json(response_text):
-            custom_print(clean_html(response_text))  # Display model's follow-up prompt to user
-            user_response = custom_input().strip().lower()
-            response_handling_prompt.format(user_response=user_response)
+        try:
 
-            final_follow_up = generate(prompt=[response_handling_prompt], session=session)
-            # custom_print(clean_html(final_follow_up.text))  # Display model's final follow-up or conclusion message
-            if final_follow_up.text.startswith("END"):
-                custom_print("Thanks for your time")
-                return 
-        else:
-            custom_print("Can't generate that document now")
-            continue
+            follow_up_response = generate(prompt=[follow_up_prompt], session=session)
+            response_text = follow_up_response.text
+            if not is_valid_json(response_text):
+                custom_print(clean_html(response_text))  # Display model's follow-up prompt to user
+                user_response = custom_input().strip().lower()
+                response_handling_prompt.format(user_response=user_response)
+
+                final_follow_up = generate(prompt=[response_handling_prompt], session=session)
+                # custom_print(clean_html(final_follow_up.text))  # Display model's final follow-up or conclusion message
+                if final_follow_up.text.startswith("END"):
+                    custom_print("Thanks for your time")
+                    return 
+            else:
+                custom_print("Can't generate that document now")
+                continue
+
+        except Exception as e:
+            break
 
 
         
