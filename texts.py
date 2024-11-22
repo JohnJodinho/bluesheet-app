@@ -1,6 +1,6 @@
 
 MISCO = """
-MISCO Water products
+<MISCO Water products>
 
 Here is a list of your product categories and represented manufacturers in Northern California. Search the attached 
 document and identify the relevant sections and equipment for your business.
