@@ -337,20 +337,23 @@
  
      <!-- Loading Indicator (Dynamically Created) -->
      <div id="loading-indicator">
-         <div class="spinner"></div>
-         <p>Processing...</p>
+         <div class="spinner">
+            
+         </div>
+         
      </div>
 
     <!-- Upload Modal -->
     <div id="uploadModal" style="display: none;">
         <p>Upload Document:</p>
-        <input type="file" id="uploadFileInput" accept=".doc, .docx, .txt, .xlsx, .csv, .pdf" style="color: #ddd;">
+        <input type="file" id="uploadFileInput" accept=".doc, .docx, .txt, .xlsx, .csv, .pdf" style="color: #e0e0e0;">
         <div style="margin-top: 10px;">
-            <button onclick="openFileExplorer()" style="padding: 8px; cursor: pointer;">Open</button>
-            <button onclick="uploadFile()" style="padding: 8px; cursor: pointer;">Upload</button>
-            <button onclick="closeModal()" style="padding: 8px; cursor: pointer;">Close</button>
+            <progress id="uploadProgressBar" value="0" max="100" style="width: 100%; display: none;"></progress>
+            <button onclick="uploadFile()" style="padding: 8px; cursor: pointer; color: #e0e0e0; background-color: #3c3c3c; border: none; border-radius: 5px;">Upload</button>
+            <button onclick="closeModal()" style="padding: 8px; cursor: pointer; color: #e0e0e0; background-color: #3c3c3c; border: none; border-radius: 5px;">Close</button>
         </div>
     </div>
+    
     <div id="notification-box" style="display: none;">
         <h2>Model Error</h2>
         <p id="message-content"></p>
@@ -411,7 +414,7 @@
             }
 
             // Validate file type
-            const validExtensions = ["doc", "docx", "txt", "csv", "pdf"];
+            const validExtensions = ["doc", "docx", "txt", "xlsx", "csv", "pdf"];
             const fileExtension = file.name.split('.').pop().toLowerCase();
 
             if (!validExtensions.includes(fileExtension)) {
@@ -419,31 +422,54 @@
                 return;
             }
 
+            const progressBar = document.getElementById("uploadProgressBar");
+            progressBar.style.display = "block"; // Show progress bar
+            progressBar.value = 0; // Reset progress bar
+
             // Create FormData object to send file data
             const formData = new FormData();
             formData.append("file", file);
 
             try {
-                const response = await fetch(`${BASE_URL}/upload`, {
-                    method: "POST",
-                    body: formData
-                });
+                const xhr = new XMLHttpRequest();
 
-                const data = await response.json();
+                // Monitor progress
+                xhr.upload.onprogress = function (event) {
+                    if (event.lengthComputable) {
+                        const percentComplete = (event.loaded / event.total) * 100;
+                        progressBar.value = percentComplete;
+                    }
+                };
 
-                if (response.ok) {
-                    alert(`${file.name} successfully uploaded.`);
-                } else {
-                    alert(`Error uploading file: ${data.error}`);
-                }
+                // Handle response
+                xhr.onload = function () {
+                    if (xhr.status === 200) {
+                        const response = JSON.parse(xhr.responseText);
+                        alert(`${file.name} successfully uploaded.`);
+                    } else {
+                        const errorResponse = JSON.parse(xhr.responseText);
+                        alert(`Error uploading file: ${errorResponse.error || xhr.statusText}`);
+                    }
 
+                    progressBar.style.display = "none"; // Hide progress bar
+                    closeModal(); // Close the modal
+                };
+
+                xhr.onerror = function () {
+                    console.error("Error uploading file:", xhr.statusText);
+                    alert("An error occurred while uploading the file. Please try again.");
+                    progressBar.style.display = "none"; // Hide progress bar
+                };
+
+                // Open connection and send the file
+                xhr.open("POST", `${BASE_URL}/upload`);
+                xhr.send(formData);
             } catch (error) {
                 console.error("Error uploading file:", error);
                 alert("An error occurred while uploading the file. Please try again.");
-            } finally {
-                closeModal();
             }
         }
+
         
 
         async function fetchMessages() {
