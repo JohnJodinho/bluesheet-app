@@ -17,8 +17,7 @@ from prompt_templates import (
     SYSTEM_INSTRUCTION,
     prompt_template_misco, 
     prompt_template_shape_southwest, 
-    follow_up_prompt, 
-    response_handling_prompt
+
 )
 
 from typing import Iterable
