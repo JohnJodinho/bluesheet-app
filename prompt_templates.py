@@ -172,23 +172,21 @@ If the user declines:
 
 
 follow_up_prompt = """
-<INSTRUCTIONS>Ask user if they would like to perform any other actions or need further assistance.
-<Question>
-Would you like to perform any other actions or need further assistance?
-<Action if Yes>
-Reply: "Provide details on the next action you would like to take, and I will assist you."
-<Action if No>
-I will conclude the session. Thank you for using this service.
-<Output>
-If user responds with "Yes", proceed to ask for specific details on the requested action. If "No", confirm session completion.
+<INSTRUCTIONS>
+User has been asked if they would like to perform any other actions/do something or not. Interprete the response in <USER_RESPONSE> and perform ACTION... 
+<ACTION IF USER WANTS TO DO SOMETHING>
+Reply with: "Provide details on the next action you would like to take, and I will assist you."
+<ACTION IF USER DOES NOT WANT TO DO SOMETHING>
+Reply with: "END: I will conclude the session. Thank you for using this service."
+<USER_RESPONSE>{user_response}</USER_RESPONSE>
 """
 
 response_handling_prompt = """
 <INSTRUCTIONS>
-The user has responded to the question about whether they need further assistance. Interpret the response, asking for specifics if they would like additional actions or concluding the session if they do not.
+The user has responded. Interpret the response in <USER_RESPONSE>, and do what the user wants to do.
 <USER_RESPONSE>
 {user_response}
-<Output>
-If the response is affirmative, ask for details on the next action. (Structure using html)
-If the response is negative, provide a thank-you message to end the session. Start the thank-you message with "END: Thank you for using this service." Do not use any formatting or html structure for this thank-you message.
+</USER_RESPONSE>
+<OUTPUT>
+Follow the instructions provided in the response and generate the appropriate output (In HTML format).
 """
