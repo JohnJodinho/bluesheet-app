@@ -693,27 +693,18 @@ and Southwest Valve? I will review the RFP based on their products and categorie
 
 def handle_last_step(session):
     while not stop_chat:
-        # Initial prompt to ask if the user would like to do anything else
-        # Send the prompt to the model to capture the user's intent (yes/no response)
-        custom_print("Would you like to perform any other actions or need further assistance?")
+        custom_print("Would you like to perform any other actions? (yes/no)")
         user_response = custom_input()
-        try:
-            response_text = generate(prompt=[follow_up_prompt.format(user_response=user_response)], session=session).text
-            if response_text.strip().lower().startswith("end"):
+        if user_response.lower().find("yes") != -1:
+            custom_print("Provide details on the next action you would like to take, and I will assist you. or type 'end' to end this session")
+            user_response = custom_input()
+            if user_response.lower().find("end") != -1: 
                 custom_print("I will conclude the session. Thank you for using this service.")
                 break
-            if not is_valid_json(response_text):
-                custom_print(clean_html(response_text))  # Display model's follow-up prompt to user
-                user_response = custom_input()
-                response_handling_prompt.format(user_response=user_response)
-
-                final_follow_up = generate(prompt=[response_handling_prompt], session=session)
-                custom_print(clean_html(final_follow_up.text))  # Display model's final follow-up or conclusion message
             else:
-                custom_print("Can't generate that document now")
-                continue
-
-        except Exception as e:
+                response = generate(prompt=[user_response], session=session).text
+        else:
+            custom_print("I will conclude the session. Thank you for using this service.")
             break
 
 
