@@ -101,6 +101,7 @@ stop_chat = False
 error_state = {"modelError": False, "message": ""}
 batches_processed = 0
 
+
 @app.route('/', methods=['GET'])
 def home():
     global stop_chat, error_state
@@ -334,6 +335,7 @@ def check_and_delete_all_files():
     except Exception as e:
         app.logger.warning(f"Could not delete files: {e}")
 
+
 def generate(
     prompt: list,
     max_output_tokens: int = 2048,
@@ -366,7 +368,9 @@ def generate(
             break  # Exit loop if no error occurs
         except Exception as e:
             app.logger.error(f"An error occurred, retrying in 2 seconds: {e}")
-            message = f"Vertex ai: {str(e)}"
+            if "429" in str(e):
+                continue
+            message = f"Gemini Model Error: {str(e)}"
             if stage == 0:
                 error_state = {"modelError": True, "message": message}
                 stage += 1
@@ -511,6 +515,7 @@ def handle_step_one(session):
                 
 
         rfp_part_files = {}
+        
         custom_print("Getting the RFP document ready...")
         for rfp_document_name in rfp_docs:
             rfp_document = load_document(rfp_document_name)
@@ -690,20 +695,20 @@ def handle_last_step(session):
     while not stop_chat:
         # Initial prompt to ask if the user would like to do anything else
         # Send the prompt to the model to capture the user's intent (yes/no response)
+        custom_print("Would you like to perform any other actions or need further assistance?")
+        user_response = custom_input()
         try:
-
-            follow_up_response = generate(prompt=[follow_up_prompt], session=session)
-            response_text = follow_up_response.text
+            response_text = generate(prompt=[follow_up_prompt.format(user_response=user_response)], session=session).text
+            if response_text.strip().lower().startswith("end"):
+                custom_print("I will conclude the session. Thank you for using this service.")
+                break
             if not is_valid_json(response_text):
                 custom_print(clean_html(response_text))  # Display model's follow-up prompt to user
-                user_response = custom_input().strip().lower()
+                user_response = custom_input()
                 response_handling_prompt.format(user_response=user_response)
 
                 final_follow_up = generate(prompt=[response_handling_prompt], session=session)
-                # custom_print(clean_html(final_follow_up.text))  # Display model's final follow-up or conclusion message
-                if final_follow_up.text.startswith("END"):
-                    custom_print("Thanks for your time")
-                    return 
+                custom_print(clean_html(final_follow_up.text))  # Display model's final follow-up or conclusion message
             else:
                 custom_print("Can't generate that document now")
                 continue
