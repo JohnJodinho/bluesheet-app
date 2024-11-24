@@ -223,35 +223,58 @@
             margin: 5px 0;
         }
 
-        /* Loading indicator styling */
-        #loading-indicator {
-            display: none;
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(0, 0, 0, 0.8);
-            padding: 20px;
-            border-radius: 10px;
-            color: #e0e0e0;
-            font-size: 16px;
-            z-index: 1000;
-            text-align: center;
+        .response-indicator {
+        display: none;
+        align-items: center;
+        background: #1f1f1f; /* Slightly lighter grey for contrast */
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
+        border-radius: 8px;
+        padding: 15px 20px;
+        font-size: 16px;
+        color: #e0e0e0; /* Light grey text */
+        animation: fadeIn 0.3s ease-in-out;
         }
 
-        .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #3498db;
-            border-radius: 50%;
-            width: 30px;
-            height: 30px;
-            animation: spin 1s linear infinite;
-            margin: 10px auto;
+        .response-indicator span {
+        margin-left: 10px;
         }
 
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        .dot-flash {
+        display: inline-block;
+        margin-left: 5px;
+        width: 8px;
+        height: 8px;
+        background-color: #888888; /* Medium grey for animation dots */
+        border-radius: 50%;
+        animation: dotFlash 1.4s infinite ease-in-out both;
+        }
+
+        .dot-flash:nth-child(2) {
+        animation-delay: 0.2s;
+        }
+
+        .dot-flash:nth-child(3) {
+        animation-delay: 0.4s;
+        }
+
+        @keyframes fadeIn {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        }
+
+        @keyframes dotFlash {
+        0%, 80%, 100% {
+            transform: scale(0);
+        }
+        40% {
+            transform: scale(1);
+        }
         }
 
         /* Disabled chat overlay */
@@ -336,12 +359,9 @@
      </div>
  
      <!-- Loading Indicator (Dynamically Created) -->
-     <div id="loading-indicator">
-         <div class="spinner">
-            
-         </div>
-         
-     </div>
+    <div id="responseIndicator" class="response-indicator">
+        Generating response<span class="dot-flash"></span><span class="dot-flash"></span><span class="dot-flash"></span>
+    </div>
 
     <!-- Upload Modal -->
     <div id="uploadModal" style="display: none;">
@@ -390,21 +410,26 @@
             uploadFileInput.click(); // Opens the file explorer for choosing a file
         }
 
-        function showLoadingIndicator() {
-            const loadingIndicator = document.getElementById("loading-indicator");
-            const chatOverlay = document.getElementById("chat-disabled-overlay");
-            loadingIndicator.style.display = "block";
-            chatOverlay.style.display = "block";
+
+
+         // Show the response indicator
+        function showResponseIndicator() {
+            const indicator = document.getElementById("responseIndicator");
+            // const chatOverlay = document.getElementById("chat-disabled-overlay");
+            // chatOverlay.style.display = "block";
             document.getElementById("chatContainer").style.pointerEvents = "none"; // Disable chat area
+            indicator.style.display = "flex";
         }
 
-        function hideLoadingIndicator() {
-            const loadingIndicator = document.getElementById("loading-indicator");
-            const chatOverlay = document.getElementById("chat-disabled-overlay");
-            loadingIndicator.style.display = "none";
-            chatOverlay.style.display = "none";
+        // Hide the response indicator
+        function hideResponseIndicator() {
+            const indicator = document.getElementById("responseIndicator");
+            // const chatOverlay = document.getElementById("chat-disabled-overlay");
+            // chatOverlay.style.display = "none";
             document.getElementById("chatContainer").style.pointerEvents = "auto"; // Enable chat area
+            indicator.style.display = "none";
         }
+
         async function uploadFile() {
             const file = uploadFileInput.files[0];
             
@@ -530,13 +555,13 @@
                 </div>
             `);
             $('#chatContainer').scrollTop($('#chatContainer')[0].scrollHeight);
-            showLoadingIndicator();
+            showResponseIndicator();
         }
 
 
         // Append model response to chat container
         function appendModelResponse(message) {
-            hideLoadingIndicator();
+            hideResponseIndicator();
             $('#chatContainer').append(`
                 <div class="message">
                     <div class="icon">🤖</div>
