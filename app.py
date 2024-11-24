@@ -17,7 +17,8 @@ from prompt_templates import (
     SYSTEM_INSTRUCTION,
     prompt_template_misco, 
     prompt_template_shape_southwest, 
-
+    follow_up_prompt, 
+    response_handling_prompt
 )
 
 from typing import Iterable
@@ -516,11 +517,14 @@ def handle_step_one(session):
         rfp_part_files = {}
         
         custom_print("Getting the RFP document ready...")
-        for rfp_document_name in rfp_docs:
-            rfp_document = load_document(rfp_document_name)
-            rfp_part_files[rfp_document_name] = rfp_document
+        try:
+            for rfp_document_name in rfp_docs:
+                rfp_document = load_document(rfp_document_name)
+                rfp_part_files[rfp_document_name] = rfp_document
+        except Exception as e:
+            continue
     
-        rfp_parts = sorted_dict = dict(
+        rfp_parts = sorted_dict = dict( 
             sorted(rfp_part_files.items(), key=lambda item: int(item[0].split("-batch")[1].split(".pdf")[0]))
         )
 
@@ -701,7 +705,8 @@ def handle_last_step(session):
                 custom_print("I will conclude the session. Thank you for using this service.")
                 break
             else:
-                response = generate(prompt=[user_response], session=session).text
+                response = generate(prompt=[f"{user_response}"], session=session).text
+                custom_print(clean_html(response))
         else:
             custom_print("I will conclude the session. Thank you for using this service.")
             break
