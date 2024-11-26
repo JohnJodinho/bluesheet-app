@@ -17,6 +17,7 @@ from prompt_templates import (
     SYSTEM_INSTRUCTION,
     prompt_template_misco, 
     prompt_template_shape_southwest, 
+    prompt_template_bid_analysis,
     follow_up_prompt, 
     response_handling_prompt
 )
@@ -91,6 +92,10 @@ TEMP_DOWNLOADS_FOLDER = 'downloads'
 os.makedirs(TEMP_DOWNLOADS_FOLDER, exist_ok=True)
 app.config['TEMP_DOWNLOADS_FOLDER'] = TEMP_DOWNLOADS_FOLDER
 
+SYSTEM_DOCS = "app_documents"
+os.makedirs(SYSTEM_DOCS, exist_ok=True)
+app.config["SYSTEM_DOCS"] = SYSTEM_DOCS
+
 # Global variables
 print_queue = Queue()
 input_request_queue = Queue()
@@ -150,7 +155,7 @@ def initialize_chat(reset=False):
         stop_chat = True
         if chat_thread and chat_thread.is_alive():
             chat_thread.join()  # Wait for the thread to end
-            # time.sleep(2)
+            
         # Reset the control flag for the new session
         stop_chat = False
         error_state = {"modelError": False, "message": ""}
@@ -181,6 +186,7 @@ def start_chat_session():
     check_and_delete_all_files()
     handle_step_one(session)
     handle_step_two(session)
+    handle_bid_analysis_generation(session)
     handle_last_step(session)
     check_and_delete_all_files()
     
@@ -399,6 +405,44 @@ def is_valid_json(response_text):
 def clean_html(response_text):
     html = re.sub(r'```html|```', '', response_text).strip()
     return html
+
+def json_to_docx(json_string, folder):
+    # Parse JSON string into a Python dictionary
+    json_text = re.sub(r'```json|```', '', json_string).strip()
+    data = json.loads(json_text)
+    
+    # Retrieve filename from the first dictionary
+    file_name = data[0].get("fileName", "output.docx")
+    
+    # Initialize a Word document
+    document = Docxdocument()
+    
+
+    for item in data[1:]:
+        content_type = item.get("type")
+        text = item.get("text", "")
+        font_size = item.get("fontSize", 12)
+        level = item.get("level", 1)  # For headings, this defines heading level
+
+        if content_type == "heading":
+            # Add a heading with the specified level
+            heading = document.add_heading(text, level=level)
+            # Adjust font size of heading if specified
+            for run in heading.runs:
+                run.font.size = Pt(font_size)
+        
+        elif content_type == "paragraph":
+            # Add a paragraph with the specified font size
+            paragraph = document.add_paragraph(text)
+            # Set the font size for each run in the paragraph
+            for run in paragraph.runs:
+                run.font.size = Pt(font_size)
+                
+    # Build the full path for saving the file
+    save_path = os.path.join(app.config['TEMP_DOWNLOADS_FOLDER'], file_name)
+    # Save the document with the specified filename in the uploads folder
+    document.save(save_path)
+    app.logger.info(f"Document saved as {save_path}")
 
 def save_to_excel(json_data, folder=None):
     """Save JSON data to Excel with bold headers using openpyxl."""
@@ -693,6 +737,82 @@ and Southwest Valve? I will review the RFP based on their products and categorie
                 return
         except Exception as e:
             return
+
+        
+def handle_bid_analysis_generation(session):
+    first_message = custom_input()
+    while not stop_chat:
+        
+        template_file_path = os.path.join(SYSTEM_DOCS, "Blue_Sheet_Bid_Document_Template.pdf")
+        custom_print("Generating Bluesheet Basic RFP Bid Analysis Word Document...")
+        bluesheet_bid_doc_template = load_document(template_file_path)
+
+        prompt_template_one = prompt_template_bid_analysis
+        
+        
+        response_text = generate(prompt=[bluesheet_bid_doc_template, prompt_template_one], session=session).text
+        # custom_print(response_text)
+        if is_valid_json(response_text):
+            try:
+                # Save or pass the JSON data to the json_to_docx function
+                print(response_text)
+                json_to_docx(response_text, TEMP_DOWNLOADS_FOLDER)
+                custom_print("Document successfuly generated")
+                break
+            except Exception as e: 
+                app.logger.error(f"An error occurred: {e}")
+        
+        app.logger.error("Error occurred while generating the JSON structure. Trying again...")
+        custom_print("An error occurred")
+        custom_print("Regenerating Bluesheet Basic RFP Bid Analysis Document...")
+        responses = generate(prompt=[
+            """
+            The document generation failed. Please try again, ensuring no errors in JSON structure.
+            """
+        ], session=session)
+        response_text = responses.text
+        if is_valid_json(response_text):
+            try:
+                
+                json_to_docx(response_text, TEMP_DOWNLOADS_FOLDER)
+                custom_print("Document successfuly analyzed")
+                break
+                
+            except Exception as e: 
+                app.logger.error(f"An error occurred: {e}")
+                custom_print("An error ocurred. Try again later")
+                return False
+    # Handle user feedback and modifications
+    while not stop_chat:
+        custom_print("Would you like to make any modifications or corrections to the document? If yes, please specify the modifications.")
+        user_response = custom_input().strip()
+        # Request JSON content for the document
+        response_text = generate(prompt=[
+            f"""
+            <NOTE> This stage is iterative depending on the user's feedback. </NOTE>
+            <INSTRUCTIONS>
+            Apply user feedback to the previously sent JSON document and send new document with changes. That is if user requests modifications.
+            <ACTION>
+            If the user requests modifications:
+                * apply the user feedback to the JSON document and return the JSON that'll be formatted into a DOCX document.
+            If the user does not request modifications:
+                * Reply with a message indicating that no modifications were requested and proceeding to the next step. (Not in JSON format)
+                * Do not mention anything about JSON in your response.
+            <USER_RESPONSE>{user_response}</USER_RESPONSE>
+            """
+        ],  session=session).text
+        if is_valid_json(response_text):
+            try:
+                json_to_docx(response_text, TEMP_DOWNLOADS_FOLDER)
+                custom_print("Document updated successfully.")
+                continue
+            except Exception as e:
+                app.logger.error(f"An error occurred: {e}")
+                continue
+        else: 
+            custom_print("No modifications were requested. Proceeding to the next step.")
+            break
+
 
 def handle_last_step(session):
     while not stop_chat:
