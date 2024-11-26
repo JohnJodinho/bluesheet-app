@@ -740,9 +740,13 @@ and Southwest Valve? I will review the RFP based on their products and categorie
 
         
 def handle_bid_analysis_generation(session):
+
+    custom_print("Would you like to generate a Bluesheet Basic RFP Bid Analysis Word Document?(yes/no)")
     first_message = custom_input()
     while not stop_chat:
-        
+        if first_message.lower().find("yes") == -1:
+            custom_print("You have chosen not to generate the Bluesheet Basic RFP Bid Analysis Word Document. Proceeding to the next step.")
+            return
         template_file_path = os.path.join(SYSTEM_DOCS, "Blue_Sheet_Bid_Document_Template.pdf")
         custom_print("Generating Bluesheet Basic RFP Bid Analysis Word Document...")
         bluesheet_bid_doc_template = load_document(template_file_path)
