@@ -7,11 +7,12 @@ SYSTEM_INSTRUCTION = [
     "Your Key Features include:",
     "* Key Phrase Extraction",
     "* Named Entity Recognition",
-    "* JSON File Generation for Excel (.xlsx) Creation",
+    "* JSON File Generation for Excel (.xlsx) and Word (.docx) Creation",
     "* Synergy Identification for specific brands and product categories",
 
     # Instructions for Handling Excel and DOCX Generations
     "For requests to 'extract to bluesheet', 'extract to excel', 'extract to spreadsheet', 'extract to .xlsx', or 'extract to .csv', generate a JSON format string. This JSON will be used to create a well-formatted Excel file.",
+    "For document analysis outputs (e.g., '[Project Name] – Basic RFP Bid Analysis'), create a JSON file to generate a .docx file with structured sections as specified, directly pulling content from the uploaded RFP.",
     "Clear instructions on generating JSON files for document creation will be provided in the prompts.",
 
     # Handling Missing Data
@@ -26,7 +27,7 @@ SYSTEM_INSTRUCTION = [
     "* <ol> for numbered lists",
 
     # Unsupported File Types
-    "If asked to generate a document type other than Excel (.xlsx), respond with: 'Sorry, I can't help with that.'"
+    "If asked to generate a document type other than Excel (.xlsx) or Word (.docx), respond with: 'Sorry, I can't help with that.'"
 ]
 
 
@@ -169,7 +170,103 @@ If the user declines:
 "Understood. You chose not to generate the bluesheet for Shape and Southwest Valve."
 """
 
+prompt_template_bid_analysis = """
+<INSTRUCTIONS>
+You are tasked with generating JSON data that represents the structure of a `.docx` document titled "[Project Name] – Basic RFP Bid Analysis". Replace [Project Name] with the name of the project (ensure it follows file naming conventions). This document will summarize essential project information as provided in the uploaded RFP. Each section should be formatted with clear headings and proper spacing for readability.
 
+
+<FORMATTING GUIDELINES>
+1. Title: Set the document title as "[Project Name] - RFP Analysis" using the project name extracted from the RFP.
+2. Use the Blue_Sheet_Bid_Document_Template.pdf as a reference for formatting.
+3. Use a header for each main section, with bold font for section names and sub-section names (e.g., "Bid Information:", "Funding Sources:").
+4. Format content with appropriate spacing and alignment to ensure clarity.
+5. Populate each field directly with extracted data from the RFP. If data is not available, label it as "Not specified". Make sure document is thoroughly scanned before using the "Not specified" phrase.
+6. If data is not found, find a description that can suit data to be extracted that was not found.
+
+<ACTION>
+Parse and extract the following sections from the RFP document and format them as JSON according to this schema:
+
+[{"fileName": "[Project Name] - RFP Analysis.docx"},
+{"type": "heading", "text": "<section title>", "fontSize": <font size>, "level": <heading level>},
+{"type": "paragraph", "text": "<section content>", "fontSize": <font size>},
+...]
+
+The sections are as follows:
+
+1. Project Information:
+   - Project Name
+   - Location
+   - Owner/Agency
+   - Engineer or Consulting Firm (including contact information if available)
+
+2. Bid Information:
+   - Bid Number
+   - Bid Date and Time
+   - Pre-Bid Date, Time, and Type (mandatory or optional)
+
+3. Funding Sources:
+   - List the funding source(s) provided in the RFP (Federal, State, Local, Private, Turnkey, P3, or Other)
+
+4. Project Scope:
+   - Summarize the project's scope of work as described in the RFP, including major components or requirements.
+
+5. Contractual Information:
+   - Job Completion Date
+   - Bid Acceptance Period
+   - Guarantee Percentage
+   - Construction Schedule (working days)
+   - Estimated Award Date
+   - Liquidated Damages (daily penalty cost)
+
+6. Bid Conditions:
+   - Listing Form requirement
+   - Base Bid requirement
+   - Substitutes Allowed (yes/no) with related comments (This section should be in the document)
+   - Or-Equals Accepted (yes/no) with related comments (This section should be in the document)
+
+<OUTPUT>
+Make sure only valid JSON is generated with no errors.
+Title: "[Project Name] - RFP Analysis"
+Use the project name from the RFP as the title.
+Extraction Guidelines:
+
+Territory: [Determine the applicable territory based on the project location, such as Northern California, Southern California, etc. Match this territory with the sales or service regions defined by the organization].
+Project Information:
+
+Project Name: [Insert Project Name from RFP]
+Location: [Insert project location, including city, county, and state]
+Owner/Agency: [Insert name of the owner or agency managing the project]
+Consulting / Engineer: [Insert name of the consulting or engineering firm overseeing the project]
+Consulting Firm Contact: [Insert contact information if available, or any relevant details provided in the RFP]
+Bid Information:
+
+Bid Number: [Insert bid number if provided]
+Bid Date and Time: [Insert the date and time for bid submission]
+Pre-Bid Date: [Insert the date and details of any pre-bid meetings or conferences]
+Funding Sources:
+[List the funding sources as specified in the RFP, such as Federal, State, Local, Private, etc.]
+
+Project Scope:
+Scope of Work: [Summarize the project scope. Explain the individual key components including major components like infrastructure, construction, or system installation, etc described in the RFP]
+
+Contractual Information:
+
+Job Completion Date: [Insert the number of working days or the expected completion timeline]
+Bid Acceptance Period: [Insert the duration for which the bid is valid. Look carefully for any specific bid acceptance period mentioned]
+Guarantee Percentage: [Insert any guarantee or performance bond percentage required. Look for any specific percentage mentioned in the RFP]
+Construction Schedule (working days): [Insert the number of working days as specified. Look for any specific construction schedule mentioned]
+Estimated Award Date: [Insert the estimated date for bid award as specified in the RFP]
+Liquidated Damages (daily penanlty cost): [Insert the daily penalty or liquidated damages clause if stated]
+
+Bid Conditions:
+
+Listing Form Requirement: [Describe subcontractor listing requirements, including thresholds and categories]
+Base Bid Requirement: [Detail any base bid requirements, including forms and submission guidelines]
+Substitutes Allowed: [Indicate whether material or product substitutions are allowed and under what conditions]
+Or-Equals Accepted: [Do a detiled analysis and indicate and describe whether "or-equal" products or brands are accepted and describe the approval process]
+
+<NOTE> For each extracted data, include a description.
+"""
 
 follow_up_prompt = """
 <INSTRUCTIONS>
