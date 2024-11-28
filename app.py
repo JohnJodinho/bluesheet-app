@@ -53,10 +53,9 @@ from google.generativeai import (
 from dotenv import load_dotenv
 
 
-load_dotenv()
-MODEL_NAME = os.getenv("MODEL_NAME")
-BASE_URL = os.getenv("CLOUD_RUN_SERVICE_URL", "http://127.0.0.1:5000")
-API_KEY = os.getenv("GENAI_API_KEY")
+MODEL_NAME = os.environ.get("MODEL_NAME")
+BASE_URL = os.environ.get("CLOUD_RUN_SERVICE_URL")
+API_KEY = os.environ.get("GENAI_API_KEY")
 
 
 
